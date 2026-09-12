@@ -7,6 +7,7 @@ import { UpdateEmailDto } from './dto/update-email.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { UsersService } from './users.service';
 import { Query } from '@nestjs/common';
+import { RequestEmailDto } from './dto/update-email-user.dto';
 
 @Controller('users')
 export class UsersController {
@@ -21,6 +22,12 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   updateUserInfo(@CurrentUser() user, @Body() dto: UpdateUserInfoDto) {
     return this.userService.updateUserInfo(user.userId, dto);
+  }
+
+  @Patch('/me/change-request')
+  @UseGuards(JwtAuthGuard)
+  updateUserEmail(@CurrentUser() user, @Body() dto: RequestEmailDto) {
+    return this.userService.requestEmailChange(user._id, dto);
   }
 
   @Get('check-username')

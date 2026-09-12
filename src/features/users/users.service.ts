@@ -19,6 +19,7 @@ import { MailService } from '../mail/mail.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
+import { RequestEmailDto } from './dto/update-email-user.dto';
 
 @Injectable()
 export class UsersService {
@@ -28,6 +29,7 @@ export class UsersService {
     private jwtService: JwtService,
     private configService: ConfigService,
     // private emailService: EmailService,
+    private mailService: MailService,
     // @InjectModel('Profile') private profileModel: Model<Profile>,
   ) {}
 
@@ -228,6 +230,26 @@ export class UsersService {
       });
       // TODO: send unlock email
     }
+  }
+
+  async requestEmailChange(userId: string, dto: RequestEmailDto) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException();
+
+    const validPassword = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!validPassword) throw new UnauthorizedException('Invalid password');
+
+    const existing = await this.userModel.findOne({ email: dto.newEmail });
+    if (existing) throw new ConflictException('Email already in use');
+
+    const token = this.jwtService.sign(
+      { sub: user._id, newEmail: dto.newEmail },
+      { expiresIn: '30m', secret: process.env.EMAIL_CHANGE_SECRET },
+    );
+
+    await this.mailService.sendActivationEmail(dto.newEmail, user.firstName, token);
+
+    return { message: 'Confirmation email sent' };
   }
 
   async resetFailedAttempts(userId: string) {
