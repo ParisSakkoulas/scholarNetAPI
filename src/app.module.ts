@@ -10,6 +10,10 @@ import configuration from './config/configuration.module';
 import { AuthModule } from './features/auth/auth.module';
 import { UsersModule } from './features/users/users.module';
 import { ProfileModule } from './features/profile/profile.module';
+import { TeamsModule } from './features/teams/teams.module';
+import { ProjectsModule } from './features/projects/projects.module';
+import { TasksModule } from './features/tasks/task.module';
+import { ActivityModule } from './features/activity/activity.module';
 
 @Module({
   imports: [
@@ -25,6 +29,10 @@ import { ProfileModule } from './features/profile/profile.module';
     AuthModule,
     UsersModule,
     ProfileModule,
+    TeamsModule,
+    ProjectsModule,
+    TasksModule,
+    ActivityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

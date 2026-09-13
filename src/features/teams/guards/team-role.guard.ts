@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Reflector } from '@nestjs/core';
 import { TeamMember, TeamMemberDocument } from '../schema/team-member.schema';
 
@@ -14,14 +14,17 @@ export class TeamRoleGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest();
     const requiredRoles = this.reflector.get<string[]>('roles', ctx.getHandler()) ?? [];
+
     const member = await this.memberModel
       .findOne({
-        teamId: req.params.teamId,
-        userId: req.user._id,
+        teamId: new Types.ObjectId(req.params.teamId),
+        userId: new Types.ObjectId(req.user._id),
         status: 'active',
       })
       .lean();
+
     if (!member) return false;
+
     req.teamMember = member;
     return requiredRoles.length === 0 || requiredRoles.includes(member.role);
   }

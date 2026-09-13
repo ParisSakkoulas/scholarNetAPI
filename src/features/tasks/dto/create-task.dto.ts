@@ -12,6 +12,10 @@ export class CreateTaskDto {
   columnId!: string;
 
   @IsOptional()
+  @IsMongoId()
+  parentTaskId?: string;
+
+  @IsOptional()
   @IsArray()
   @IsMongoId({ each: true })
   assigneeIds?: string[];

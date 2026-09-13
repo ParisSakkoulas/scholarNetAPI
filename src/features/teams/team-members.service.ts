@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { TeamMember, TeamMemberDocument } from './schema/team-member.schema';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
@@ -14,10 +14,10 @@ export class TeamMembersService {
     if (exists) throw new ConflictException('User already invited or a member');
     return this.memberModel.create({
       teamId,
-      userId: dto.userId,
+      userId: new Types.ObjectId(dto.userId),
       role: dto.role ?? 'member',
       status: 'invited',
-      invitedBy,
+      invitedBy: new Types.ObjectId(invitedBy),
     });
   }
 

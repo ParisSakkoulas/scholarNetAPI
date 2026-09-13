@@ -1,5 +1,5 @@
 import { Prop, SchemaFactory, Schema } from '@nestjs/mongoose';
-import { Types } from 'mongoose';
+import { Types, Document } from 'mongoose';
 
 export type TaskDocument = Task & Document;
 
@@ -12,6 +12,9 @@ export class Task {
 
   @Prop({ type: Types.ObjectId, ref: 'Column', required: true, index: true })
   columnId!: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'Task', default: null, index: true })
+  parentTaskId?: Types.ObjectId | null;
 
   @Prop({ required: true })
   title!: string;
@@ -39,5 +42,8 @@ export class Task {
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   createdBy!: Types.ObjectId;
+
+  @Prop({ type: Date, default: null })
+  doneAt?: Date | null;
 }
 export const TaskSchema = SchemaFactory.createForClass(Task);

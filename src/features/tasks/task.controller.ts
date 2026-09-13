@@ -36,6 +36,11 @@ export class TasksController {
     return this.tasksService.findForProject(projectId, { columnId, assignee, status });
   }
 
+  @Get('tasks/:taskId/subtasks')
+  findSubtasks(@Param('taskId') taskId: string) {
+    return this.tasksService.findSubtasks(taskId);
+  }
+
   @Patch('tasks/:taskId')
   update(@Param('taskId') taskId: string, @Body() dto: UpdateTaskDto) {
     return this.tasksService.update(taskId, dto);

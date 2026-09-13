@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 
 import { Team, TeamDocument } from './schema/team.schema';
 
@@ -20,7 +20,7 @@ export class TeamsService {
     const team = await this.teamModel.create({ ...dto, ownerId });
     await this.memberModel.create({
       teamId: team._id,
-      userId: ownerId,
+      userId: new Types.ObjectId(ownerId),
       role: 'owner',
       status: 'active',
       joinedAt: new Date(),
@@ -29,7 +29,9 @@ export class TeamsService {
   }
 
   async findAllForUser(userId: string) {
-    const memberships = await this.memberModel.find({ userId, status: 'active' }).lean();
+    const memberships = await this.memberModel
+      .find({ userId: new Types.ObjectId(userId), status: 'active' })
+      .lean();
     const teamIds = memberships.map((m) => m.teamId);
     return this.teamModel.find({ _id: { $in: teamIds } }).lean();
   }

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Board, BoardDocument } from './schema/board.schema';
 import { Column, ColumnDocument } from './schema/column.schema';
 import { CreateBoardDto } from './dto/create-board.dto';
@@ -13,13 +13,23 @@ export class BoardsService {
   ) {}
 
   async create(projectId: string, dto: CreateBoardDto) {
-    const last = await this.boardModel.findOne({ projectId }).sort({ position: -1 }).lean();
+    const last = await this.boardModel
+      .findOne({ projectId: new Types.ObjectId(projectId) })
+      .sort({ position: -1 })
+      .lean();
     const position = dto.position ?? (last?.position ?? 0) + 1000;
-    return this.boardModel.create({ ...dto, projectId, position });
+    return this.boardModel.create({
+      ...dto,
+      projectId: new Types.ObjectId(projectId),
+      position,
+    });
   }
 
   async findForProject(projectId: string) {
-    return this.boardModel.find({ projectId }).sort({ position: 1 }).lean();
+    return this.boardModel
+      .find({ projectId: new Types.ObjectId(projectId) })
+      .sort({ position: 1 })
+      .lean();
   }
 
   async update(boardId: string, dto: CreateBoardDto) {
@@ -31,7 +41,7 @@ export class BoardsService {
   async remove(boardId: string) {
     const res = await this.boardModel.findByIdAndDelete(boardId);
     if (!res) throw new NotFoundException('Board not found');
-    await this.columnModel.deleteMany({ boardId });
+    await this.columnModel.deleteMany({ boardId: new Types.ObjectId(boardId) });
     return { deleted: true };
   }
 }
