@@ -1,13 +1,19 @@
 /**
  * _layout.ts
  * ScholarNet design tokens (hex-resolved) + shared email shell.
+ *
+ * Recolored to match the "Modern" PrimeNG preset (primary #30AFFF, soft
+ * rounded shapes, Inter/JetBrains Mono) instead of the old oxford/oxblood/
+ * ochre newspaper palette. Update _components.ts's `C` object to match
+ * these same hex values if it hasn't been already — the two files should
+ * share one palette.
  */
 
 // ─── Google Fonts ─────────────────────────────────────────────────────────────
 const FONT_IMPORT = `
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 `.trim();
 
 // ─── Logo (Cloudinary — served as PNG for maximum email client compatibility) ─
@@ -15,21 +21,24 @@ const FONT_IMPORT = `
 // SVGs from external URLs are blocked by Gmail and Outlook.
 // Cloudinary can transcode on the fly: swap /upload/ with /upload/f_png,w_72/
 // to get a 72px-wide PNG (2× for retina). No extra config needed.
-const LOGO_SRC = 'https://res.cloudinary.com/dbjabrvn8/image/upload/f_png,w_72/v1780222053/scholarNet-mark_vybbnh.svg';
+// NOTE: if the source mark itself is still drawn in the old oxford/ochre
+// colors, re-export it in the new primary blue before this goes out —
+// this file can't recolor an already-rasterized image.
+const LOGO_SRC =
+  'https://res.cloudinary.com/dbjabrvn8/image/upload/f_png,w_72/v1780222053/scholarNet-mark_vybbnh.svg';
 
-// ─── Token map ────────────────────────────────────────────────────────────────
+// ─── Token map (Modern preset — keep in sync with _components.ts's `C`) ───────
 export const T = {
-  paper: '#f4f0e7',
-  paper2: '#e9e3d6',
-  rule: '#d6cfbf',
-  oxford: '#2b3a56',
-  oxblood: '#6f2e29',
-  ochre: '#c79a49',
-  ink: '#21262e',
-  ink2: '#3a414b',
-  ink3: '#6a717a',
-  serif: "'Source Serif 4', Georgia, serif",
-  sans: "'IBM Plex Sans', Arial, sans-serif",
+  paper: '#F8FBFF', // surface.50 — outer page background
+  paper2: '#EAF7FF', // primary.50 — heading band / tinted panels
+  rule: '#E2EEF7', // surface.200 — hairlines / borders
+  primary: '#30AFFF', // primary.500
+  primaryDark: '#0A3B61', // primary.900 — header band background
+  primaryLight: '#7DD8FF', // primary.300 — accent text on the dark header
+  ink: '#1B2733', // surface.900 — headings, strong text
+  ink2: '#445A6B', // surface.700 — body text
+  ink3: '#5E7688', // surface.600 — muted text
+  sans: "'Inter', Arial, sans-serif",
   mono: "'JetBrains Mono', 'Courier New', monospace",
 } as const;
 
@@ -62,15 +71,18 @@ export function emailLayout(params: EmailLayoutParams): string {
     <tr>
       <td align="center">
 
+        <!-- border-radius + overflow:hidden is a progressive enhancement:
+             Gmail/Apple Mail/most modern clients round the corners; Outlook
+             ignores both and falls back to square corners. -->
         <table width="600" cellpadding="0" cellspacing="0" role="presentation"
-          style="background-color:#ffffff;
-                 border:1px solid ${T.rule};
-                 box-shadow:0 30px 70px -40px rgba(20,20,30,0.25),
-                             0 4px 12px -6px rgba(20,20,30,0.10);">
+          style="background-color:#ffffff; border-collapse:separate;
+                 border:1px solid ${T.rule}; border-radius:16px; overflow:hidden;
+                 box-shadow:0 30px 70px -40px rgba(10,59,97,0.20),
+                             0 4px 12px -6px rgba(10,59,97,0.10);">
 
           <!-- Header -->
           <tr>
-            <td style="background-color:${T.oxford}; padding:24px 40px;">
+            <td style="background-color:${T.primaryDark}; padding:24px 40px;">
               <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
                 <tr>
 
@@ -89,10 +101,10 @@ export function emailLayout(params: EmailLayoutParams): string {
 
                         <!-- Wordmark -->
                         <td style="vertical-align:middle;">
-                          <span style="font-family:${T.serif}; font-size:22px;
+                          <span style="font-family:${T.sans}; font-size:20px;
                                        font-weight:400; color:#ffffff;
-                                       letter-spacing:-0.018em;">
-                            Scholar<em style="font-style:italic; color:${T.ochre};">Net</em>
+                                       letter-spacing:-0.01em;">
+                            scholar<b style="font-weight:700; color:${T.primaryLight};">Net</b>
                           </span>
                         </td>
 
@@ -104,7 +116,7 @@ export function emailLayout(params: EmailLayoutParams): string {
                   <td align="right" style="vertical-align:middle;">
                     <span style="font-family:${T.mono}; font-size:10px;
                                  letter-spacing:0.14em; text-transform:uppercase;
-                                 color:rgba(255,255,255,0.45);">
+                                 color:rgba(255,255,255,0.55);">
                       ${params.eyebrow ?? 'Academic Research Platform'}
                     </span>
                   </td>
@@ -118,9 +130,9 @@ export function emailLayout(params: EmailLayoutParams): string {
           <tr>
             <td style="background-color:${T.paper2}; padding:32px 40px 28px;
                        border-bottom:1px solid ${T.rule};">
-              <h1 style="margin:0; font-family:${T.serif}; font-weight:400;
-                          font-size:24px; line-height:1.3;
-                          letter-spacing:-0.018em; color:${T.ink};">
+              <h1 style="margin:0; font-family:${T.sans}; font-weight:600;
+                          font-size:22px; line-height:1.3;
+                          letter-spacing:-0.01em; color:${T.ink};">
                 ${params.heading}
               </h1>
             </td>

@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  Req,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TeamRoleGuard } from './guards/team-role.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -17,8 +28,26 @@ export class TeamsController {
   }
 
   @Get()
-  findAllForUser(@Req() req) {
-    return this.teamsService.findAllForUser(req.user._id);
+  async getMyTeams(
+    @Req() req,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortField') sortField?: string,
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+    @Query('search') search?: string,
+  ) {
+    const userId = req.user._id;
+
+    if (!page) {
+      return this.teamsService.findAllForUser(userId);
+    }
+    return this.teamsService.findPageForUser(userId, {
+      page: Number(page),
+      pageSize: Number(pageSize ?? 10),
+      sortField,
+      sortOrder,
+      search,
+    });
   }
 
   @Get(':teamId')
