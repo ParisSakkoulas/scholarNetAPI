@@ -141,7 +141,7 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get('JWT_SECRET'),
-      expiresIn: '15m',
+      expiresIn: (this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m') as any,
     });
 
     const refreshToken = this.jwtService.sign(payload, {
@@ -209,8 +209,6 @@ export class AuthService {
 
     const expires = new Date(Date.now() + 60 * 60 * 1000); // 1h
     await this.userService.setResetToken(user._id.toString(), token, expires);
-
-    console.log('Sending an email');
     await this.mailService.sendResetPasswordEmail(user.email, user.firstName, token);
 
     return { message: 'If this email is registered, you will receive a reset link.' };
@@ -241,10 +239,6 @@ export class AuthService {
 
     if (user.passwordResetExpires < new Date()) {
       throw new BadRequestException('Reset link has expired. Please request a new one.');
-    }
-
-    if (resetPasswordDto.newPassword !== resetPasswordDto.confirmPassword) {
-      throw new BadRequestException('Passwords do not match.');
     }
 
     const hashedPassword = await bcrypt.hash(resetPasswordDto.newPassword, 10);
@@ -310,5 +304,19 @@ export class AuthService {
         role: user.role,
       },
     };
+  }
+
+  async unlockAccount(token: string) {
+    const user = await this.userService.unlockAccount(token);
+
+    if (!user) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'INVALID_UNLOCK_TOKEN',
+        message: 'Invalid or expired unlock link.',
+      });
+    }
+
+    return { message: 'Account unlocked. You can now log in.' };
   }
 }

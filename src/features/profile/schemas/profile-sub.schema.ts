@@ -27,6 +27,9 @@ export class Education {
   @Prop({ required: true, trim: true })
   institution!: string;
 
+  @Prop({ trim: true })
+  fieldOfStudy?: string;
+
   @Prop({ required: true })
   startYear!: number;
 

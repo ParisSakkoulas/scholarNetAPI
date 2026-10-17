@@ -4,15 +4,22 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
 import { Profile } from './schemas/profile.schema';
+import { User } from '../users/schema/user.schema';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { Position } from './schemas/profile-sub.schema';
+import { Position, Education, Interest } from './schemas/profile-sub.schema';
 import { EducationDto } from './dto/education.dto';
 import { SkillDto } from './dto/skill.dto';
 import { InterestDto } from './dto/interest.dto';
 
+const escapeRegex = (text: string): string =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 @Injectable()
 export class ProfileService {
-  constructor(@InjectModel(Profile.name) private profileModel: Model<Profile>) {}
+  constructor(
+    @InjectModel(Profile.name) private profileModel: Model<Profile>,
+    @InjectModel(User.name) private userModel: Model<User>,
+  ) {}
 
   /**
    * Every user gets a Profile document created automatically the first
@@ -63,19 +70,15 @@ export class ProfileService {
     return profile;
   }
 
-  async updatePosition(userId: string, positionId: string, dto: Position): Promise<Profile> {
+  async listPositions(userId: string): Promise<Position[]> {
+    const profile = await this.profileModel.findOne({ user: userId }).lean();
+    return profile?.positions ?? [];
+  }
+
+  async updatePosition(userId: string, positionId: string, dto: Partial<Position>): Promise<Profile> {
     const profile = await this.profileModel.findOneAndUpdate(
       { user: userId, 'positions._id': positionId },
-      {
-        $set: {
-          'positions.$.title': dto.title,
-          'positions.$.institution': dto.institution,
-          'positions.$.department': dto.department,
-          'positions.$.startDate': dto.startDate,
-          'positions.$.endDate': dto.endDate ?? null,
-          'positions.$.current': dto.current ?? false,
-        },
-      },
+      { $set: this.prefixed('positions', dto) },
       { new: true },
     );
     if (!profile) throw new NotFoundException('Position not found.');
@@ -103,17 +106,19 @@ export class ProfileService {
     return profile;
   }
 
-  async updateEducation(userId: string, educationId: string, dto: EducationDto): Promise<Profile> {
+  async listEducation(userId: string): Promise<Education[]> {
+    const profile = await this.profileModel.findOne({ user: userId }).lean();
+    return profile?.education ?? [];
+  }
+
+  async updateEducation(
+    userId: string,
+    educationId: string,
+    dto: Partial<EducationDto>,
+  ): Promise<Profile> {
     const profile = await this.profileModel.findOneAndUpdate(
       { user: userId, 'education._id': educationId },
-      {
-        $set: {
-          'education.$.degree': dto.degree,
-          'education.$.institution': dto.institution,
-          'education.$.startYear': dto.startYear,
-          'education.$.endYear': dto.endYear ?? null,
-        },
-      },
+      { $set: this.prefixed('education', dto) },
       { new: true },
     );
     if (!profile) throw new NotFoundException('Education entry not found.');
@@ -133,14 +138,17 @@ export class ProfileService {
   // ---------------- SKILLS ----------------
 
   async addSkill(userId: string, dto: SkillDto): Promise<Profile> {
-    const profile = await this.profileModel.findOne({ user: userId });
-    if (!profile) throw new NotFoundException('Profile not found.');
-
-    const exists = profile.skills.some((s) => s.name.toLowerCase() === dto.name.toLowerCase());
-    if (exists) throw new ConflictException('Skill already added.');
-
-    profile.skills.push({ name: dto.name, endorsementCount: 0 } as any);
-    return profile.save();
+    const name = dto.name.trim();
+    // Atomic push guarded by a case-insensitive duplicate check. Avoids
+    // profile.save(), which re-validates the whole document (including any
+    // legacy sub-documents) and made this endpoint fail.
+    const profile = await this.profileModel.findOneAndUpdate(
+      { user: userId, skills: { $not: { $elemMatch: { name: this.exactNameRegex(name) } } } },
+      { $push: { skills: { name, endorsementCount: 0 } } },
+      { new: true, upsert: false },
+    );
+    if (!profile) await this.throwNotFoundOrConflict(userId, 'Skill already added.');
+    return profile!;
   }
 
   async removeSkill(userId: string, skillId: string): Promise<Profile> {
@@ -155,15 +163,31 @@ export class ProfileService {
 
   // ---------------- INTERESTS ----------------
 
+  async listInterests(userId: string): Promise<Interest[]> {
+    const profile = await this.profileModel.findOne({ user: userId }).lean();
+    return profile?.interests ?? [];
+  }
+
   async addInterest(userId: string, dto: InterestDto): Promise<Profile> {
-    const profile = await this.profileModel.findOne({ user: userId });
-    if (!profile) throw new NotFoundException('Profile not found.');
+    const name = dto.name.trim();
+    const profile = await this.profileModel.findOneAndUpdate(
+      { user: userId, interests: { $not: { $elemMatch: { name: this.exactNameRegex(name) } } } },
+      { $push: { interests: { name } } },
+      { new: true, upsert: false },
+    );
+    if (!profile) await this.throwNotFoundOrConflict(userId, 'Interest already added.');
+    return profile!;
+  }
 
-    const exists = profile.interests.some((i) => i.name.toLowerCase() === dto.name.toLowerCase());
-    if (exists) throw new ConflictException('Interest already added.');
+  private exactNameRegex(name: string): RegExp {
+    return new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+  }
 
-    profile.interests.push({ name: dto.name } as any);
-    return profile.save();
+  /** Called when a guarded push matched nothing: no profile → 404, else it's a duplicate → 409. */
+  private async throwNotFoundOrConflict(userId: string, conflictMessage: string): Promise<never> {
+    const exists = await this.profileModel.exists({ user: userId });
+    if (!exists) throw new NotFoundException('Profile not found.');
+    throw new ConflictException(conflictMessage);
   }
 
   async removeInterest(userId: string, interestId: string): Promise<Profile> {
@@ -176,16 +200,62 @@ export class ProfileService {
     return profile;
   }
 
-  async searchProfiles(query: string, limit = 20) {
-    return this.profileModel
+  /** Builds a `$set` payload like { 'positions.$.title': ... } from defined dto fields only. */
+  private prefixed(field: string, dto: object): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(dto)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [`${field}.$.${k}`, v]),
+    );
+  }
+
+  /**
+   * People search. Names live on the User document, so first find users whose
+   * first name / last name / username match every word typed ("jane do"), then
+   * return their profiles plus any profile matching on headline, country,
+   * interests or skills. Only users that already have a Profile document appear.
+   */
+  async searchProfiles(query: string, page = 1, limit = 10) {
+    const term = query?.trim();
+    page = Math.max(1, Math.floor(page) || 1);
+    limit = Math.min(50, Math.max(1, Math.floor(limit) || 10));
+    if (!term) return { items: [], total: 0, page, limit };
+
+    const regexOf = (text: string) => new RegExp(escapeRegex(text), 'i');
+    const whole = regexOf(term);
+
+    const users = await this.userModel
       .find({
-        $or: [
-          { headline: { $regex: query, $options: 'i' } },
-          { country: { $regex: query, $options: 'i' } },
-          { 'interests.label': { $regex: query, $options: 'i' } },
-        ],
+        $and: term.split(/\s+/).map((word) => {
+          const rx = regexOf(word);
+          return { $or: [{ firstName: rx }, { lastName: rx }, { username: rx }] };
+        }),
       })
-      .limit(limit)
-      .populate('user', 'firstName lastName username profilePhotoUrl');
+      .select('_id')
+      .lean();
+
+    const filter = {
+      $or: [
+        { user: { $in: users.map((u) => u._id) } },
+        { headline: whole },
+        { country: whole },
+        { 'interests.name': whole },
+        { 'skills.name': whole },
+      ],
+    };
+
+    const [items, total] = await Promise.all([
+      this.profileModel
+        .find(filter)
+        .sort({ _id: 1 }) // stable order so pages don't overlap
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .select('user headline country city verified interests skills')
+        .populate('user', 'firstName lastName username profilePhotoUrl')
+        .lean(),
+      this.profileModel.countDocuments(filter),
+    ]);
+
+    return { items, total, page, limit };
   }
 }

@@ -1,4 +1,5 @@
-import { IsString, IsOptional, MaxLength, Matches, IsArray } from 'class-validator';
+import { IsString, IsOptional, MaxLength, Matches, IsArray, IsIn } from 'class-validator';
+import { AVAILABILITY_VALUES } from './availability';
 import { CreateProfileDto } from './profile.dto';
 
 export class UpdateProfileDto extends CreateProfileDto {
@@ -18,8 +19,8 @@ export class UpdateProfileDto extends CreateProfileDto {
 
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  availability?: string;
+  @IsIn(AVAILABILITY_VALUES, { each: true })
+  availability?: string[];
 
   @IsOptional()
   @IsString()

@@ -5,6 +5,9 @@ import * as nodemailer from 'nodemailer';
 import { Transporter } from 'nodemailer';
 import { activationTemplate, resetPasswordTemplate } from './templates';
 import { emailChangeTemplate } from './templates/emailChange.template';
+import { emailChangedNoticeTemplate } from './templates/emailChangedNotice.template';
+import { accountLockedTemplate } from './templates/accountLocked.template';
+import { MAX_LOGIN_ATTEMPTS, UNLOCK_TOKEN_TTL_HOURS } from '../auth/constants/auth.constants';
 
 @Injectable()
 export class MailService {
@@ -26,13 +29,19 @@ export class MailService {
   }
 
   //   Simple generic method to send an email. In a real app, you'd likely have more specific methods like sendVerificationEmail, sendPasswordResetEmail, etc.
-  private async sendMail(options: { to: string; subject: string; html: string }): Promise<void> {
+  private async sendMail(options: {
+    to: string;
+    subject: string;
+    html: string;
+    text?: string;
+  }): Promise<void> {
     try {
       await this.transporter.sendMail({
         from: `"ScholarNet" <${this.fromAddress}>`,
         to: options.to,
         subject: options.subject,
         html: options.html,
+        text: options.text,
       });
     } catch (error) {
       console.error('Failed to send email:', error);
@@ -71,6 +80,40 @@ export class MailService {
       to,
       subject: 'Confirm your new ScholarNet email address',
       html: emailChangeTemplate(firstName, confirmLink),
+    });
+  }
+
+  /** Sent to the OLD address after the change, so the real owner can react if it was not them. */
+  async sendEmailChangedNotice(to: string, firstName: string, newEmail: string): Promise<void> {
+    const clientUrl = this.config.get<string>('app.clientUrl');
+    const resetLink = `${clientUrl}/auth/forgot-password`;
+
+    await this.sendMail({
+      to,
+      subject: 'Your ScholarNet email address was changed',
+      html: emailChangedNoticeTemplate(firstName, newEmail, resetLink),
+    });
+  }
+
+  async sendAccountLockedEmail(
+    user: { email: string; firstName: string },
+    token: string,
+  ): Promise<void> {
+    const clientUrl = this.config.get<string>('app.clientUrl');
+    const unlockLink = `${clientUrl}/auth/unlock?token=${token}`;
+    const resetLink = `${clientUrl}/auth/forgot-password`;
+
+    await this.sendMail({
+      to: user.email,
+      subject: 'Your ScholarNet account was locked',
+      html: accountLockedTemplate(
+        user.firstName,
+        unlockLink,
+        resetLink,
+        MAX_LOGIN_ATTEMPTS,
+        `${UNLOCK_TOKEN_TTL_HOURS} hour`,
+      ),
+      text: `Your ScholarNet account was locked after ${MAX_LOGIN_ATTEMPTS} failed login attempts. Unlock it here: ${unlockLink}`,
     });
   }
 }

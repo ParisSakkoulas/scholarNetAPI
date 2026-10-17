@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Res, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Res,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { ResentVerificationLinkDto } from './dto/resend-link.dto';
@@ -9,10 +20,11 @@ import { Request, Response } from 'express';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { GoogleAuthGuard } from 'src/common/guards/google-auth.guard';
+import { UnlockAccountDto } from './dto/unlock.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
   @Post('register')
   async create(@Body() registerDto: RegisterDto) {
@@ -22,7 +34,7 @@ export class AuthController {
 
   @Get('verify-email/:token')
   verifyEmail(@Param('token') token: string) {
-    console.log("Token ", token)
+    console.log('Token ', token);
     return this.authService.verifyEmail(token);
   }
 
@@ -30,7 +42,6 @@ export class AuthController {
   resendVerificationLink(@Body() resentLinkDto: ResentVerificationLinkDto) {
     return this.authService.resendVerificationLink(resentLinkDto);
   }
-
 
   @Post('login')
   login(@Body() dto: UserLoginDto, @Res({ passthrough: true }) res: Response) {
@@ -58,6 +69,10 @@ export class AuthController {
     return this.authService.resetPassword(dto);
   }
 
+  @Post('unlock')
+  unlock(@Body() dto: UnlockAccountDto) {
+    return this.authService.unlockAccount(dto.token);
+  }
 
   // --- GOOGLE ---
   @Get('google')
@@ -68,16 +83,9 @@ export class AuthController {
 
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
-  async googleCallback(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async googleCallback(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     return this.authService.oauthLogin(req.user as any, res);
   }
-
-
-
-
 
   //     @Get()
   //     findAll() {

@@ -7,12 +7,12 @@ export class PositionDto {
   @IsString()
   institution!: string;
 
-  @IsString()
-  department!: string;
-
   @IsOptional()
+  @IsString()
+  department?: string;
+
   @IsDateString()
-  startDate?: Date;
+  startDate!: Date;
 
   @IsOptional()
   @IsDateString()

@@ -3,7 +3,6 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserInfoDto } from './dto/update-user.dto';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { UpdateEmailDto } from './dto/update-email.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { UsersService } from './users.service';
 import { Query } from '@nestjs/common';
@@ -24,12 +23,6 @@ export class UsersController {
     return this.userService.updateUserInfo(user.userId, dto);
   }
 
-  @Patch('/me/change-request')
-  @UseGuards(JwtAuthGuard)
-  updateUserEmail(@CurrentUser() user, @Body() dto: RequestEmailDto) {
-    return this.userService.requestEmailChange(user._id, dto);
-  }
-
   @Get('check-username')
   async checkUsername(
     @Query('username') username: string,
@@ -45,6 +38,13 @@ export class UsersController {
     return { exists };
   }
 
+  /** Needs a login: results include email addresses. */
+  @Get('search')
+  @UseGuards(JwtAuthGuard)
+  search(@CurrentUser() user, @Query('q') q: string) {
+    return this.userService.search(q, user.userId);
+  }
+
   @Get(':id')
   async getSingleUser(@Param('id') id: string) {
     return this.userService.findUserById(id);
@@ -52,8 +52,8 @@ export class UsersController {
 
   @Patch('/change-email')
   @UseGuards(JwtAuthGuard)
-  updateEmail(@CurrentUser() user, @Body() dto: UpdateEmailDto) {
-    return this.userService.updateEmail(user.userId, dto);
+  requestEmailChange(@CurrentUser() user, @Body() dto: RequestEmailDto) {
+    return this.userService.requestEmailChange(user.userId, dto);
   }
 
   @Get('/confirm-email/:token')

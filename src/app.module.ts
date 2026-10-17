@@ -14,6 +14,8 @@ import { TeamsModule } from './features/teams/teams.module';
 import { ProjectsModule } from './features/projects/projects.module';
 import { TasksModule } from './features/tasks/task.module';
 import { ActivityModule } from './features/activity/activity.module';
+import { FollowsModule } from './features/follows/follows.module';
+import { NotificationsModule } from './features/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { ActivityModule } from './features/activity/activity.module';
     ProjectsModule,
     TasksModule,
     ActivityModule,
+    FollowsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

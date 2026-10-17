@@ -32,8 +32,26 @@ export class ProjectsController {
 
   @Get('teams/:teamId/projects')
   @UseGuards(TeamRoleGuard)
-  findForTeam(@Param('teamId') teamId: string, @Query('status') status?: string) {
-    return this.projectsService.findForTeam(teamId, status);
+  findForTeam(
+    @Param('teamId') teamId: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortField') sortField?: string,
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+    @Query('search') search?: string,
+  ) {
+    if (!page) {
+      return this.projectsService.findForTeam(teamId, status);
+    }
+    return this.projectsService.findPageForTeam(teamId, {
+      page: Number(page),
+      pageSize: Number(pageSize ?? 10),
+      sortField,
+      sortOrder,
+      search,
+      status,
+    });
   }
 
   @Get('projects/:projectId')

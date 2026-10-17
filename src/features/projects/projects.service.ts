@@ -6,6 +6,15 @@ import { Board, BoardDocument } from './schema/board.schema';
 import { Column, ColumnDocument } from './schema/column.schema';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { PageQuery, Page } from 'src/common/models/pagination-types';
+
+/** Only these can be sorted on — never pass the query param straight to Mongoose. */
+const SORTABLE_FIELDS = new Set(['name', 'status', 'dueDate', 'createdAt']);
+
+/** Escapes regex special characters so a search term can't break or hijack the query. */
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 @Injectable()
 export class ProjectsService {
@@ -32,10 +41,44 @@ export class ProjectsService {
     return project;
   }
 
+  /** Unchanged — kept for callers still using the plain array response. */
   async findForTeam(teamId: string, status?: string) {
     const query: any = { teamId };
     if (status) query.status = status;
     return this.projectModel.find(query).sort({ createdAt: -1 }).lean();
+  }
+
+  /** Paged (and searchable) version of findForTeam, for app-generic-table. */
+  async findPageForTeam(
+    teamId: string,
+    query: PageQuery & { status?: string },
+  ): Promise<Page<Project>> {
+    const filter: Record<string, any> = { teamId };
+    if (query.status) filter.status = query.status;
+    if (query.search?.trim()) {
+      filter.name = { $regex: escapeRegex(query.search.trim()), $options: 'i' };
+    }
+
+    const sortField =
+      query.sortField && SORTABLE_FIELDS.has(query.sortField) ? query.sortField : 'createdAt';
+    const sort: Record<string, 1 | -1> = {
+      [sortField]: query.sortOrder === 'desc' || sortField === 'createdAt' ? -1 : 1,
+    };
+
+    const page = Math.max(query.page, 1);
+    const pageSize = Math.max(query.pageSize, 1);
+
+    const [data, total] = await Promise.all([
+      this.projectModel
+        .find(filter)
+        .sort(sort)
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .lean(),
+      this.projectModel.countDocuments(filter),
+    ]);
+
+    return { data, total };
   }
 
   async findOne(projectId: string) {

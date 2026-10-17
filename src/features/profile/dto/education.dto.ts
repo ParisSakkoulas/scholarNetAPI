@@ -11,17 +11,10 @@ export class EducationDto {
   @IsString()
   fieldOfStudy?: string;
 
-  @IsOptional()
   @IsInt()
   @Min(1900)
   @Max(2100)
-  year?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1900)
-  @Max(2100)
-  startYear?: number;
+  startYear!: number;
 
   @IsOptional()
   @IsInt()

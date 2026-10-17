@@ -13,13 +13,13 @@ import { User } from './schema/user.schema';
 import * as bcrypt from 'bcrypt';
 import { UserStatus } from 'src/common/enums/user.status.enum';
 import { UpdateUserInfoDto } from './dto/update-user.dto';
-import { UpdateEmailDto } from './dto/update-email.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { MailService } from '../mail/mail.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import { RequestEmailDto } from './dto/update-email-user.dto';
+import { MAX_LOGIN_ATTEMPTS, UNLOCK_TOKEN_TTL_MS, EMAIL_CHANGE_TOKEN_TTL_MS } from '../auth/constants/auth.constants';
 
 @Injectable()
 export class UsersService {
@@ -90,38 +90,51 @@ export class UsersService {
     );
   }
 
+  /**
+   * Step 2 of the email change: the user clicked the link sent to the NEW address.
+   * Only now does `email` actually change.
+   */
   async confirmEmail(token: string) {
-    // 1. verify token
-    let payload: { sub: string; email: string };
-    try {
-      payload = this.jwtService.verify(token, {
-        secret: this.configService.get('JWT_VERIFICATION_SECRET'),
-      });
-    } catch {
+    const hashed = createHash('sha256').update(token).digest('hex');
+
+    const user = await this.userModel
+      .findOne({ emailChangeToken: hashed, emailChangeExpires: { $gt: new Date() } })
+      .select('+emailChangeToken +emailChangeExpires');
+    if (!user || !user.pendingEmail) {
       throw new BadRequestException('Invalid or expired confirmation link.');
     }
 
-    // 2. find user
-    const user = await this.userModel.findOne({
-      _id: payload.sub,
-      emailChangeToken: token,
-    });
-    if (!user) throw new BadRequestException('Invalid confirmation link.');
+    const newEmail = user.pendingEmail;
+    const oldEmail = user.email;
 
-    // 3. check expiry
-    if (user.emailChangeExpires < new Date()) {
-      throw new BadRequestException('Confirmation link has expired.');
+    // someone else may have taken this address since the request was made
+    const taken = await this.userModel.exists({ email: newEmail, _id: { $ne: user._id } });
+    if (taken) {
+      await this.clearPendingEmail(user.id);
+      throw new ConflictException('Email is already in use.');
     }
 
-    // 4. update email + clear pending fields
-    await this.userModel.findByIdAndUpdate(payload.sub, {
-      email: user.pendingEmail,
-      pendingEmail: null,
-      emailChangeToken: null,
-      emailChangeExpires: null,
-    });
+    user.email = newEmail;
+    user.pendingEmail = null;
+    user.emailChangeToken = null;
+    user.emailChangeExpires = null;
+    user.refreshToken = null as any; // force re-login on all devices
+    try {
+      await user.save();
+    } catch (err: any) {
+      if (err?.code === 11000) throw new ConflictException('Email is already in use.');
+      throw err;
+    }
 
-    return { message: 'Email updated successfully.' };
+    await this.mailService.sendEmailChangedNotice(oldEmail, user.firstName, newEmail);
+
+    return { message: 'Email updated successfully. Please log in again.' };
+  }
+
+  private async clearPendingEmail(userId: string) {
+    await this.userModel.findByIdAndUpdate(userId, {
+      $set: { pendingEmail: null, emailChangeToken: null, emailChangeExpires: null },
+    });
   }
 
   async updatePassword(userId: string, dto: UpdatePasswordDto) {
@@ -181,38 +194,39 @@ export class UsersService {
     return updated;
   }
 
-  async updateEmail(userId: string, dto: UpdateEmailDto) {
-    // 1. check if email already in use
-    const existing = await this.userModel.findOne({
-      email: dto.newEmail,
-      _id: { $ne: userId },
-    });
+  /**
+   * Step 1 of the email change: verify identity, park the new address as `pendingEmail`
+   * and mail a one-time link to it. The current email stays active until it is confirmed;
+   * a new request replaces any earlier pending one.
+   */
+  async requestEmailChange(userId: string, dto: RequestEmailDto) {
+    const user = await this.userModel.findById(userId).select('+password');
+    if (!user) throw new NotFoundException('User not found.');
+    if (!user.password) {
+      throw new BadRequestException('This account has no password; set one before changing email.');
+    }
+
+    const validPassword = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!validPassword) throw new UnauthorizedException('Current password is incorrect.');
+
+    const newEmail = dto.newEmail.trim().toLowerCase();
+    if (newEmail === user.email.toLowerCase()) {
+      throw new BadRequestException('This is already your email address.');
+    }
+
+    const existing = await this.userModel.exists({ email: newEmail, _id: { $ne: userId } });
     if (existing) throw new ConflictException('Email is already in use.');
 
-    // 2. generate verification token
-    const token = this.jwtService.sign(
-      { sub: userId, email: dto.newEmail },
-      {
-        secret: this.configService.get('JWT_VERIFICATION_SECRET'),
-        expiresIn: '1d',
-      },
-    );
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    // 3. save pending email + token
+    const rawToken = randomBytes(32).toString('hex');
     await this.userModel.findByIdAndUpdate(userId, {
-      pendingEmail: dto.newEmail,
-      emailChangeToken: token,
-      emailChangeExpires: expires,
+      $set: {
+        pendingEmail: newEmail,
+        emailChangeToken: createHash('sha256').update(rawToken).digest('hex'),
+        emailChangeExpires: new Date(Date.now() + EMAIL_CHANGE_TOKEN_TTL_MS),
+      },
     });
 
-    // 4. send confirmation email
-    const user = await this.userModel.findById(userId);
-
-    if (!user) {
-      throw new ConflictException('Username not found');
-    }
-    await this.emailService.sendEmailChangeConfirmation(dto.newEmail, user.firstName, token);
+    await this.mailService.sendEmailChangeConfirmation(newEmail, user.firstName, rawToken);
 
     return { message: 'Confirmation email sent to your new address.' };
   }
@@ -224,32 +238,23 @@ export class UsersService {
       { new: true },
     );
 
-    if (user && user.loginAttempts >= 5) {
-      await this.userModel.findByIdAndUpdate(userId, {
+    if (!user || user.loginAttempts < MAX_LOGIN_ATTEMPTS) return;
+
+    const rawToken = randomBytes(32).toString('hex');
+
+    const locked = await this.userModel.findOneAndUpdate(
+      { _id: userId, status: UserStatus.ACTIVE },
+      {
         status: UserStatus.LOCKED,
-      });
-      // TODO: send unlock email
-    }
-  }
-
-  async requestEmailChange(userId: string, dto: RequestEmailDto) {
-    const user = await this.userModel.findById(userId);
-    if (!user) throw new NotFoundException();
-
-    const validPassword = await bcrypt.compare(dto.currentPassword, user.password);
-    if (!validPassword) throw new UnauthorizedException('Invalid password');
-
-    const existing = await this.userModel.findOne({ email: dto.newEmail });
-    if (existing) throw new ConflictException('Email already in use');
-
-    const token = this.jwtService.sign(
-      { sub: user._id, newEmail: dto.newEmail },
-      { expiresIn: '30m', secret: process.env.EMAIL_CHANGE_SECRET },
+        unlockToken: createHash('sha256').update(rawToken).digest('hex'),
+        unlockTokenExpires: new Date(Date.now() + UNLOCK_TOKEN_TTL_MS),
+      },
+      { new: true },
     );
 
-    await this.mailService.sendActivationEmail(dto.newEmail, user.firstName, token);
+    if (!locked) return;
 
-    return { message: 'Confirmation email sent' };
+    await this.mailService.sendAccountLockedEmail(locked, rawToken);
   }
 
   async resetFailedAttempts(userId: string) {
@@ -288,6 +293,25 @@ export class UsersService {
     const field = provider === 'google' ? 'googleId' : 'orcidId';
     const userUdated = await this.userModel.findByIdAndUpdate(userId, { [field]: id });
     console.log('userUpdated', userUdated);
+  }
+
+  async unlockAccount(rawToken: string) {
+    const hashed = createHash('sha256').update(rawToken).digest('hex');
+
+    return this.userModel.findOneAndUpdate(
+      {
+        unlockToken: hashed,
+        unlockTokenExpires: { $gt: new Date() },
+        status: UserStatus.LOCKED,
+      },
+      {
+        status: UserStatus.ACTIVE,
+        loginAttempts: 0,
+        unlockToken: null,
+        unlockTokenExpires: null,
+      },
+      { new: true },
+    );
   }
 
   async createOAuthUser(oauthUser: {
@@ -333,5 +357,35 @@ export class UsersService {
     if (excludeUserId) query._id = { $ne: excludeUserId };
     const user = await this.userModel.findOne(query);
     return !!user;
+  }
+
+  private escapeRegex(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Finds active users for pickers such as the team invite box. Every word typed
+   * must match the first name, last name or username ("jane do"), or the whole
+   * text must match the email. The signed-in user is left out.
+   */
+  async search(q: string, excludeUserId?: string) {
+    const term = q?.trim();
+    if (!term) return [];
+
+    const nameMatches = term.split(/\s+/).map((word) => {
+      const rx = new RegExp(this.escapeRegex(word), 'i');
+      return { $or: [{ firstName: rx }, { lastName: rx }, { username: rx }] };
+    });
+    const emailRx = new RegExp(this.escapeRegex(term), 'i');
+
+    return this.userModel
+      .find({
+        status: UserStatus.ACTIVE,
+        ...(excludeUserId ? { _id: { $ne: excludeUserId } } : {}),
+        $or: [{ $and: nameMatches }, { email: emailRx }],
+      })
+      .limit(8)
+      .select('username email firstName lastName profilePhotoUrl')
+      .lean();
   }
 }

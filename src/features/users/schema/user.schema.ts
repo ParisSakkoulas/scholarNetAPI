@@ -9,10 +9,10 @@ import { UserStatus } from 'src/common/enums/user.status.enum';
 })
 export class User extends Document {
   @Prop({ required: true, trim: true })
-  firstName: string;
+  firstName!: string;
 
   @Prop({ required: true, trim: true })
-  lastName: string;
+  lastName!: string;
 
   @Prop({
     required: true,
@@ -20,62 +20,72 @@ export class User extends Document {
     trim: true,
     match: /^_[a-zA-Z0-9_]*$/,
   })
-  username: string;
+  username!: string;
 
   @Prop({ required: true, unique: true, trim: true, lowercase: true })
-  email: string;
+  email!: string;
 
   @Prop({ required: true })
-  password: string;
+  password!: string;
 
   @Prop({ type: String, enum: Object.values(Role), default: Role.USER })
-  role: Role;
+  role!: Role;
 
   @Prop({
     type: String,
     enum: Object.values(UserStatus),
     default: UserStatus.PENDING,
   })
-  status: UserStatus;
+  status!: UserStatus;
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Profile' })
-  profile: Profile;
+  profile!: Profile;
 
   @Prop()
-  emailConfirmationToken: string;
+  emailConfirmationToken!: string;
 
   @Prop()
-  emailConfirmationExpires: Date;
+  emailConfirmationExpires!: Date;
 
   @Prop()
-  passwordResetToken: string;
+  passwordResetToken!: string;
 
   @Prop()
-  passwordResetExpires: Date;
+  passwordResetExpires!: Date;
 
   @Prop({ default: 0 })
-  loginAttempts: number;
+  loginAttempts!: number;
+
+  @Prop({ type: Date, default: null })
+  lockUntil!: Date | null;
+
+  @Prop({ type: String, default: null, select: false })
+  unlockToken?: string | null;
+
+  @Prop({ type: Date, default: null, select: false })
+  unlockTokenExpires?: Date | null;
 
   @Prop()
-  refreshToken: string;
+  refreshToken!: string;
+
+  @Prop({ type: String, default: null })
+  pendingEmail?: string | null;
+
+  /** sha256 of the raw token that was emailed to the new address */
+  @Prop({ type: String, default: null, select: false })
+  emailChangeToken?: string | null;
+
+  @Prop({ type: Date, default: null, select: false })
+  emailChangeExpires?: Date | null;
 
   @Prop()
-  pendingEmail: string;
-
-  @Prop()
-  emailChangeToken: string;
-
-  @Prop()
-  emailChangeExpires: Date;
-
-  @Prop()
-  profilePhotoUrl: string;
+  profilePhotoUrl!: string;
 
   @Prop()
   googleId?: string;
 
   @Prop()
-  orcidId: string;
+  orcidId!: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

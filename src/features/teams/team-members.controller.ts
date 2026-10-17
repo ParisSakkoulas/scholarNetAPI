@@ -22,9 +22,16 @@ export class TeamMembersController {
     return this.membersService.list(teamId);
   }
 
-  @Post('accept')
-  accept(@Param('teamId') teamId: string, @Req() req) {
-    return this.membersService.accept(teamId, req.user._id);
+  /** The caller's own role in this team (TeamRoleGuard already loaded it). */
+  @Get('me')
+  me(@Req() req) {
+    return { role: req.teamMember.role };
+  }
+
+  /** Any active member (viewer included) can leave; the owner cannot. */
+  @Post('leave')
+  leave(@Param('teamId') teamId: string, @Req() req) {
+    return this.membersService.leave(teamId, req.user.userId);
   }
 
   @Patch(':userId')
