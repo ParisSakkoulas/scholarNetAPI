@@ -9,6 +9,7 @@ import { InterestsController } from './interests.controller';
 import { ProfileService } from './profile.service';
 import { Profile, ProfileSchema } from './schemas/profile.schema';
 import { MailModule } from '../mail';
+import { Follow, FollowSchema } from '../follows/schemas/follow.schema';
 import { User, UserSchema } from '../users/schema/user.schema';
 
 @Module({
@@ -16,6 +17,7 @@ import { User, UserSchema } from '../users/schema/user.schema';
     MongooseModule.forFeature([
       { name: Profile.name, schema: ProfileSchema },
       { name: User.name, schema: UserSchema },
+      { name: Follow.name, schema: FollowSchema },
     ]),
     MailModule,
   ],

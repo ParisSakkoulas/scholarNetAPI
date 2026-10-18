@@ -58,8 +58,19 @@ export class NotificationsService {
     recipientId: string | Types.ObjectId,
     actorId: string | Types.ObjectId,
     type: NotificationType,
+    entityId?: string | Types.ObjectId,
   ): Promise<void> {
-    await this.notificationModel.deleteMany({ recipient: recipientId, actor: actorId, type });
+    await this.notificationModel.deleteMany({
+      recipient: recipientId,
+      actor: actorId,
+      type,
+      ...(entityId ? { entityId } : {}),
+    });
+  }
+
+  /** Removes every notification about an entity that no longer exists (e.g. a deleted post). */
+  async removeByEntity(entityType: string, entityId: string | Types.ObjectId): Promise<void> {
+    await this.notificationModel.deleteMany({ entityType, entityId });
   }
 
   // ---------------- READ (current user's inbox) ----------------

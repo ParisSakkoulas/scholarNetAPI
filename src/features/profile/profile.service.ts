@@ -1,5 +1,10 @@
 // features/profile/profile.service.ts
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
@@ -10,6 +15,15 @@ import { Position, Education, Interest } from './schemas/profile-sub.schema';
 import { EducationDto } from './dto/education.dto';
 import { SkillDto } from './dto/skill.dto';
 import { InterestDto } from './dto/interest.dto';
+import { Follow } from '../follows/schemas/follow.schema';
+import {
+  CONTACT_FIELDS,
+  CONTACT_VISIBILITY_VALUES,
+  ViewerRelation,
+  redactContact,
+} from './contact-visibility';
+
+const PHONE_RE = /^\+?[0-9\s\-().]{6,24}$/;
 
 const escapeRegex = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -19,6 +33,7 @@ export class ProfileService {
   constructor(
     @InjectModel(Profile.name) private profileModel: Model<Profile>,
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(Follow.name) private followModel: Model<Follow>,
   ) {}
 
   /**
@@ -45,10 +60,53 @@ export class ProfileService {
     }
     return profile;
   }
+  /** The profile as `viewerId` (or an anonymous visitor) is allowed to see it. */
+  async getForViewer(userId: string, viewerId?: string | null) {
+    const profile = await this.getByUserId(userId);
+    const relation = await this.relationTo(viewerId, userId);
+    return redactContact(profile, relation);
+  }
+
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<Profile> {
+    const { contactVisibility, ...rest } = dto as UpdateProfileDto & {
+      contactVisibility?: Record<string, string>;
+    };
+    const set: Record<string, unknown> = { ...rest };
+    const unset: Record<string, 1> = {};
+
+    // phone and website: an empty value clears the field
+    for (const key of ['phone', 'website'] as const) {
+      if (key in set && (set[key] === '' || set[key] === null)) {
+        delete set[key];
+        unset[key] = 1;
+      }
+    }
+    if (typeof set['phone'] === 'string' && !PHONE_RE.test(set['phone'])) {
+      throw new BadRequestException('phone must be a valid phone number.');
+    }
+    if (typeof set['website'] === 'string' && !/^https?:\/\/\S+$/i.test(set['website'])) {
+      throw new BadRequestException('website must be a valid URL starting with http:// or https://');
+    }
+
+    // set each visibility key on its own so saving one never resets the others
+    if (contactVisibility) {
+      for (const [group, level] of Object.entries(contactVisibility)) {
+        if (!(CONTACT_FIELDS as readonly string[]).includes(group)) continue;
+        if (!(CONTACT_VISIBILITY_VALUES as readonly string[]).includes(level)) {
+          throw new BadRequestException(
+            `${group} visibility must be one of: ${CONTACT_VISIBILITY_VALUES.join(', ')}.`,
+          );
+        }
+        set[`contactVisibility.${group}`] = level;
+      }
+    }
+
     const profile = await this.profileModel.findOneAndUpdate(
       { user: userId },
-      { $set: dto },
+      {
+        ...(Object.keys(set).length && { $set: set }),
+        ...(Object.keys(unset).length && { $unset: unset }),
+      },
       { new: true, upsert: true },
     );
 
@@ -215,7 +273,7 @@ export class ProfileService {
    * return their profiles plus any profile matching on headline, country,
    * interests or skills. Only users that already have a Profile document appear.
    */
-  async searchProfiles(query: string, page = 1, limit = 10) {
+  async searchProfiles(query: string, page = 1, limit = 10, viewerId?: string | null) {
     const term = query?.trim();
     page = Math.max(1, Math.floor(page) || 1);
     limit = Math.min(50, Math.max(1, Math.floor(limit) || 10));
@@ -250,12 +308,60 @@ export class ProfileService {
         .sort({ _id: 1 }) // stable order so pages don't overlap
         .skip((page - 1) * limit)
         .limit(limit)
-        .select('user headline country city verified interests skills')
+        .select('user headline country city verified interests skills contactVisibility')
         .populate('user', 'firstName lastName username profilePhotoUrl')
         .lean(),
       this.profileModel.countDocuments(filter),
     ]);
 
-    return { items, total, page, limit };
+    // city/country honour each person's visibility setting
+    const ownerOf = (p: { user: unknown }) =>
+      String((p.user as { _id?: Types.ObjectId })?._id ?? p.user);
+    const connected = await this.connectedAmong(viewerId, items.map(ownerOf));
+    const visible = items.map((p) => {
+      const ownerId = ownerOf(p);
+      const relation: ViewerRelation =
+        ownerId === viewerId ? 'self' : connected.has(ownerId) ? 'connected' : 'other';
+      const { contactVisibility: _omit, ...safe } = redactContact(p, relation);
+      return safe;
+    });
+
+    return { items: visible, total, page, limit };
+  }
+
+  // ---------------- VISIBILITY HELPERS ----------------
+
+  private async relationTo(
+    viewerId: string | null | undefined,
+    ownerId: string,
+  ): Promise<ViewerRelation> {
+    if (!viewerId) return 'other';
+    if (viewerId === ownerId) return 'self';
+    const connected = await this.connectedAmong(viewerId, [ownerId]);
+    return connected.has(ownerId) ? 'connected' : 'other';
+  }
+
+  /** Which of `ownerIds` the viewer is connected with (they follow each other). */
+  private async connectedAmong(viewerId: string | null | undefined, ownerIds: string[]) {
+    const result = new Set<string>();
+    if (!viewerId || !ownerIds.length) return result;
+    const others = ownerIds.filter((id) => id !== viewerId && Types.ObjectId.isValid(id));
+    if (!others.length) return result;
+
+    const [iFollow, followMe] = await Promise.all([
+      this.followModel
+        .find({ follower: viewerId, following: { $in: others } })
+        .select('following')
+        .lean(),
+      this.followModel
+        .find({ following: viewerId, follower: { $in: others } })
+        .select('follower')
+        .lean(),
+    ]);
+    const mine = new Set(iFollow.map((f) => String(f.following)));
+    for (const f of followMe) {
+      if (mine.has(String(f.follower))) result.add(String(f.follower));
+    }
+    return result;
   }
 }

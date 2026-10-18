@@ -16,6 +16,9 @@ import { TasksModule } from './features/tasks/task.module';
 import { ActivityModule } from './features/activity/activity.module';
 import { FollowsModule } from './features/follows/follows.module';
 import { NotificationsModule } from './features/notifications/notifications.module';
+import { PostsModule } from './features/posts/posts.module';
+import { MessagesModule } from './features/messages/messages.module';
+import { PublicationsModule } from './features/publications/publications.module';
 
 @Module({
   imports: [
@@ -37,6 +40,9 @@ import { NotificationsModule } from './features/notifications/notifications.modu
     ActivityModule,
     FollowsModule,
     NotificationsModule,
+    PostsModule,
+    MessagesModule,
+    PublicationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

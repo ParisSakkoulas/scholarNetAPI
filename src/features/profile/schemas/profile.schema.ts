@@ -15,6 +15,7 @@ import {
   LinkSchema,
   Link,
 } from './profile-sub.schema';
+import { CONTACT_VISIBILITY_VALUES, ContactVisibility } from '../contact-visibility';
 
 @Schema({ timestamps: true })
 export class Profile extends Document {
@@ -43,6 +44,22 @@ export class Profile extends Document {
 
   @Prop({ trim: true })
   country?: string;
+
+  /** Contact phone, international format preferred (e.g. +30 691 234 5678). */
+  @Prop({ trim: true })
+  phone?: string;
+
+  /** Who can see each contact group. Missing keys fall back to DEFAULT_CONTACT_VISIBILITY. */
+  @Prop({
+    type: {
+      location: { type: String, enum: CONTACT_VISIBILITY_VALUES },
+      website: { type: String, enum: CONTACT_VISIBILITY_VALUES },
+      phone: { type: String, enum: CONTACT_VISIBILITY_VALUES },
+    },
+    _id: false,
+    default: undefined,
+  })
+  contactVisibility?: Partial<ContactVisibility>;
 
   @Prop({ trim: true })
   orcidId?: string;

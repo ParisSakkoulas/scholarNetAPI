@@ -14,6 +14,7 @@ import { ResentVerificationLinkDto } from './dto/resend-link.dto';
 import { UserLoginDto } from './dto/login.dto';
 import { UserStatus } from 'src/common/enums/user.status.enum';
 import * as bcrypt from 'bcrypt';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ProfileService } from '../profile/profile.service';
 import { first } from 'rxjs';
@@ -39,7 +40,11 @@ export class AuthService {
     //create a token for the user
     const payload = { sub: createdUser._id, email: createdUser.email };
     // console.log(payload);
-    const token = this.jwtService.sign(payload, { expiresIn: '1d' });
+    // activation links must never be usable as access tokens, so they get their own key
+    const token = this.jwtService.sign(payload, {
+      secret: this.purposeSecret('activation'),
+      expiresIn: '1d',
+    });
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     // 3. set token
@@ -76,7 +81,11 @@ export class AuthService {
     }
 
     const payload = { sub: user._id, email: user.email };
-    const token = this.jwtService.sign(payload, { expiresIn: '1d' });
+    // activation links must never be usable as access tokens, so they get their own key
+    const token = this.jwtService.sign(payload, {
+      secret: this.purposeSecret('activation'),
+      expiresIn: '1d',
+    });
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     await this.userService.setActivationToken(user._id.toString(), token, expires);
@@ -113,7 +122,7 @@ export class AuthService {
 
     const { accessToken, refreshToken } = this.generateTokens(user._id.toString(), user.email);
 
-    const hashedRefresh = await bcrypt.hash(refreshToken, 10);
+    const hashedRefresh = this.hashToken(refreshToken);
     await this.userService.saveRefreshToken(user._id.toString(), hashedRefresh);
 
     res.cookie('refreshToken', refreshToken, {
@@ -144,12 +153,36 @@ export class AuthService {
       expiresIn: (this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m') as any,
     });
 
+    // jwtid makes every refresh token unique, even two issued in the same second
     const refreshToken = this.jwtService.sign(payload, {
       secret: this.configService.get('JWT_REFRESH_SECRET'),
       expiresIn: '7d',
+      jwtid: randomUUID(),
     });
 
     return { accessToken, refreshToken };
+  }
+
+  /**
+   * Refresh tokens are stored as SHA-256 hashes. bcrypt is wrong here: it only reads the first
+   * 72 bytes, and the start of a JWT is identical for every token of one user, so old tokens
+   * kept matching the stored hash. The token is long and random, so a fast hash is safe.
+   */
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private tokenMatches(token: string, storedHash: string): boolean {
+    const a = Buffer.from(this.hashToken(token));
+    const b = Buffer.from(storedHash);
+    return a.length === b.length && timingSafeEqual(a, b);
+  }
+
+  /** A key per purpose (activation, reset...) derived from JWT_SECRET, so those tokens fail the access-token guard. */
+  private purposeSecret(purpose: string): string {
+    return createHmac('sha256', this.configService.get<string>('JWT_SECRET')!)
+      .update(`purpose:${purpose}`)
+      .digest('hex');
   }
 
   async refreshToken(req: Request, res: Response) {
@@ -172,8 +205,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token.');
     }
 
-    const isMatch = await bcrypt.compare(token, user.refreshToken);
-    if (!isMatch) throw new UnauthorizedException('Invalid refresh token.');
+    if (!this.tokenMatches(token, user.refreshToken)) {
+      // A correctly signed token that is not the current one was already rotated away:
+      // someone is replaying it (stolen token). End the session so neither party can continue.
+      await this.userService.saveRefreshToken(user._id.toString(), null);
+      throw new UnauthorizedException('Invalid refresh token.');
+    }
 
     // issue new tokens
     const { accessToken, refreshToken: newRefreshToken } = this.generateTokens(
@@ -181,7 +218,7 @@ export class AuthService {
       user.email,
     );
 
-    const hashedRefresh = await bcrypt.hash(newRefreshToken, 10);
+    const hashedRefresh = this.hashToken(newRefreshToken);
     await this.userService.saveRefreshToken(user._id.toString(), hashedRefresh);
 
     res.cookie('refreshToken', newRefreshToken, {
@@ -203,7 +240,7 @@ export class AuthService {
 
     const payload = { sub: user._id, email: user.email };
     const token = this.jwtService.sign(payload, {
-      secret: this.configService.get<string>('JWT_RESET_SECRET'),
+      secret: this.configService.get<string>('JWT_RESET_SECRET') ?? this.purposeSecret('reset'),
       expiresIn: '1h',
     });
 
@@ -284,7 +321,7 @@ export class AuthService {
     // 4. generate tokens
     const { accessToken, refreshToken } = this.generateTokens(user._id.toString(), user.email);
 
-    const hashedRefresh = await bcrypt.hash(refreshToken, 10);
+    const hashedRefresh = this.hashToken(refreshToken);
     await this.userService.saveRefreshToken(user._id.toString(), hashedRefresh);
 
     res.cookie('refreshToken', refreshToken, {

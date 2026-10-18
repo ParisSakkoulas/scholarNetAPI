@@ -9,6 +9,8 @@ import {
   Res,
   Req,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -44,6 +46,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @UsePipes(new ValidationPipe({ whitelist: true }))
   login(@Body() dto: UserLoginDto, @Res({ passthrough: true }) res: Response) {
     return this.authService.login(dto, res);
   }

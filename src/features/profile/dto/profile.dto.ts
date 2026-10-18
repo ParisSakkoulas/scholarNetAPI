@@ -1,5 +1,5 @@
 // features/profile/dto/create-profile.dto.ts
-import { IsString, IsOptional, MaxLength, IsUrl, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsUrl, IsArray, ValidateNested, IsIn, Matches } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PositionDto } from './position.dto';
 import { EducationDto } from './education.dto';
@@ -7,6 +7,13 @@ import { SkillDto } from './skill.dto';
 import { InterestDto } from './interest.dto';
 import { PinnedItemDto } from './pinned-item';
 import { LinkDto } from './link.dto';
+import { CONTACT_VISIBILITY_VALUES } from '../contact-visibility';
+
+export class ContactVisibilityDto {
+  @IsOptional() @IsIn(CONTACT_VISIBILITY_VALUES) location?: string;
+  @IsOptional() @IsIn(CONTACT_VISIBILITY_VALUES) website?: string;
+  @IsOptional() @IsIn(CONTACT_VISIBILITY_VALUES) phone?: string;
+}
 
 /**
  * Fields intentionally EXCLUDED from create/update:
@@ -42,6 +49,15 @@ export class CreateProfileDto {
   @IsOptional()
   @IsString()
   country?: string;
+
+  @IsOptional()
+  @Matches(/^\+?[0-9\s\-().]{6,24}$/, { message: 'phone must be a valid phone number' })
+  phone?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ContactVisibilityDto)
+  contactVisibility?: ContactVisibilityDto;
 
   @IsOptional()
   @IsString()

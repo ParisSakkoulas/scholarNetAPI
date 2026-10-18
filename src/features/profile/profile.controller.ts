@@ -16,6 +16,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { SkillDto } from './dto/skill.dto';
+import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
 
 @Controller('profile')
 export class ProfileController {
@@ -23,21 +24,31 @@ export class ProfileController {
 
   // ---------------- READ ----------------
 
-  /** Public — anyone can view a profile by userId. Counts as a profile view. */
+  /**
+   * Anyone can view a profile by userId, but location, website and phone are only included
+   * when the owner's visibility setting allows it for this viewer (anonymous, signed in, or
+   * connected = they follow each other).
+   */
   @Get(':userId')
-  async getProfile(@Param('userId') userId: string) {
-    const profile = await this.profileService.getByUserId(userId);
-    // this.profileService.incrementProfileView(userId);
-    return profile;
+  @UseGuards(OptionalJwtAuthGuard)
+  async getProfile(@CurrentUser() viewer, @Param('userId') userId: string) {
+    return this.profileService.getForViewer(userId, viewer?.userId);
   }
 
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   async searchProfiles(
+    @CurrentUser() viewer,
     @Query('q') query: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.profileService.searchProfiles(query ?? '', Number(page), Number(limit));
+    return this.profileService.searchProfiles(
+      query ?? '',
+      Number(page),
+      Number(limit),
+      viewer?.userId,
+    );
   }
 
   // ---------------- OWN PROFILE — UPDATE ----------------
