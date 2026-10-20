@@ -13,6 +13,7 @@ import {
 import { FileAccessRequest, FileAccessRequestSchema } from './schemas/file-access-request.schema';
 import { Follow, FollowSchema } from '../follows/schemas/follow.schema';
 import { User, UserSchema } from '../users/schema/user.schema';
+import { Profile, ProfileSchema } from '../profile/schemas/profile.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PublicationsService } from './publications.service';
 import { PublicationsController } from './publications.controller';
@@ -34,6 +35,7 @@ import { FileRequestsController } from './file-requests.controller';
       { name: FileAccessRequest.name, schema: FileAccessRequestSchema },
       { name: Follow.name, schema: FollowSchema },
       { name: User.name, schema: UserSchema },
+      { name: Profile.name, schema: ProfileSchema },
     ]),
     // uploads are buffered in memory (so the content can be verified) and capped by MAX_FILE_SIZE_MB
     MulterModule.registerAsync({

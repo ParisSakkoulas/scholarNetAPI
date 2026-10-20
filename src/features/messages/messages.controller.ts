@@ -5,7 +5,6 @@ import { parsePaging } from 'src/common/utils/paging';
 import { MessagesService } from './messages.service';
 import { MessagesGateway } from './messages.gateway';
 
-/** REST side of chat: list/open conversations, load history. Live delivery happens over the socket. */
 @Controller('messages')
 @UseGuards(JwtAuthGuard)
 export class MessagesController {
@@ -14,18 +13,12 @@ export class MessagesController {
     private readonly gateway: MessagesGateway,
   ) {}
 
-  /** GET /messages/conversations?page=1&limit=20 */
   @Get('conversations')
-  conversations(
-    @CurrentUser() user,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
+  conversations(@CurrentUser() user, @Query('page') page?: string, @Query('limit') limit?: string) {
     const p = parsePaging(page, limit);
     return this.messagesService.listConversations(user.userId, p.page, p.limit, p.skip);
   }
 
-  /** POST /messages/conversations  { userId } - open (or create) a chat with a connected user */
   @Post('conversations')
   open(@CurrentUser() user, @Body('userId') userId: string) {
     return this.messagesService.getOrCreateConversation(user.userId, userId);
@@ -36,7 +29,6 @@ export class MessagesController {
     return this.messagesService.getUnreadTotal(user.userId);
   }
 
-  /** GET /messages/conversations/:id/messages?limit=30&before=<messageId> (newest first) */
   @Get('conversations/:id/messages')
   history(
     @CurrentUser() user,

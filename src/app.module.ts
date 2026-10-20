@@ -19,6 +19,7 @@ import { NotificationsModule } from './features/notifications/notifications.modu
 import { PostsModule } from './features/posts/posts.module';
 import { MessagesModule } from './features/messages/messages.module';
 import { PublicationsModule } from './features/publications/publications.module';
+import { RatingsModule } from './features/ratings/ratings.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { PublicationsModule } from './features/publications/publications.module'
     PostsModule,
     MessagesModule,
     PublicationsModule,
+    RatingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

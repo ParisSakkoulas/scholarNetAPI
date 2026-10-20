@@ -7,6 +7,7 @@ import { Message, MessageSchema } from './schemas/message.schema';
 import { Follow, FollowSchema } from '../follows/schemas/follow.schema';
 import { User, UserSchema } from '../users/schema/user.schema';
 import { MessagesService } from './messages.service';
+import { MessageCryptoService } from './message-crypto.service';
 import { MessagesGateway } from './messages.gateway';
 import { MessagesController } from './messages.controller';
 
@@ -26,7 +27,7 @@ import { MessagesController } from './messages.controller';
     }),
   ],
   controllers: [MessagesController],
-  providers: [MessagesService, MessagesGateway],
+  providers: [MessagesService, MessagesGateway, MessageCryptoService],
   exports: [MessagesService],
 })
 export class MessagesModule {}

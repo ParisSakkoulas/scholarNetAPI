@@ -9,6 +9,7 @@ import {
   Param,
   Query,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 
 import { ProfileService } from './profile.service';
@@ -31,7 +32,9 @@ export class ProfileController {
    */
   @Get(':userId')
   @UseGuards(OptionalJwtAuthGuard)
-  async getProfile(@CurrentUser() viewer, @Param('userId') userId: string) {
+  async getProfile(@CurrentUser() viewer, @Param('userId') userId: string, @Req() req: { ip?: string }) {
+    // fire-and-forget: the response must not wait on the counter write
+    void this.profileService.recordProfileView(userId, viewer?.userId, req.ip).catch(() => {});
     return this.profileService.getForViewer(userId, viewer?.userId);
   }
 

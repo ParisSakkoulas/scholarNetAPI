@@ -10,6 +10,7 @@ import { Conversation } from './schemas/conversation.schema';
 import { Message } from './schemas/message.schema';
 import { Follow } from '../follows/schemas/follow.schema';
 import { User } from '../users/schema/user.schema';
+import { MessageCryptoService } from './message-crypto.service';
 
 const USER_CARD_FIELDS = 'firstName lastName username profilePhotoUrl';
 export const MAX_MESSAGE_LENGTH = 4000;
@@ -21,6 +22,7 @@ export class MessagesService {
     @InjectModel(Message.name) private messageModel: Model<Message>,
     @InjectModel(Follow.name) private followModel: Model<Follow>,
     @InjectModel(User.name) private userModel: Model<User>,
+    private crypto: MessageCryptoService,
   ) {}
 
   // ---------------- CONNECTIONS ----------------
@@ -108,7 +110,8 @@ export class MessagesService {
       .limit(limit + 1)
       .lean();
     const hasMore = rows.length > limit;
-    return { data: rows.slice(0, limit), hasMore };
+    const data = rows.slice(0, limit).map((m) => ({ ...m, text: this.crypto.decrypt(m.text) }));
+    return { data, hasMore };
   }
 
   async sendMessage(me: string, conversationId: string, rawText: string) {
@@ -124,24 +127,25 @@ export class MessagesService {
       throw new ForbiddenException('You can only message users you are connected with.');
     }
 
+    const encrypted = this.crypto.encrypt(text);
     const message = await this.messageModel.create({
       conversation: convo._id,
       sender: me,
-      text,
+      text: encrypted,
     });
 
     await this.conversationModel.updateOne(
       { _id: convo._id },
       {
         $set: {
-          lastMessage: { sender: me, text, createdAt: message.createdAt },
+          lastMessage: { sender: me, text: encrypted, createdAt: message.createdAt },
           lastMessageAt: message.createdAt,
         },
         $inc: { [`unread.${recipientId}`]: 1 },
       },
     );
 
-    return { message: message.toObject(), recipientId };
+    return { message: { ...message.toObject(), text }, recipientId };
   }
 
   /** Marks everything the other participant sent as read. Returns who should be told, or null. */
@@ -191,10 +195,11 @@ export class MessagesService {
     me: string,
   ) {
     const users = c.participants as { _id: Types.ObjectId }[];
+    const last = c.lastMessage as { text: string } | undefined | null;
     return {
       _id: c._id,
       user: users.find((u) => String(u._id) !== me) ?? null,
-      lastMessage: c.lastMessage ?? null,
+      lastMessage: last ? { ...last, text: this.crypto.decrypt(last.text) } : null,
       lastMessageAt: c.lastMessageAt,
       unreadCount: c.unread?.[me] ?? 0,
     };

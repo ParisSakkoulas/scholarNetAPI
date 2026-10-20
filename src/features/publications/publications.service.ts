@@ -11,6 +11,7 @@ import { PublicationType } from 'src/common/enums/publication-type.enum';
 import { Publication, PublicationVisibility } from './schemas/publication.schema';
 import { PublicationReference, ReferenceStatus } from './schemas/publication-reference.schema';
 import { Follow } from '../follows/schemas/follow.schema';
+import { Profile } from '../profile/schemas/profile.schema';
 import { CreatePublicationDto, PublicationAuthorDto } from './dto/create-publication.dto';
 import { UpdatePublicationDto } from './dto/update-publication.dto';
 
@@ -49,6 +50,7 @@ export class PublicationsService {
     @InjectModel(Publication.name) private publicationModel: Model<Publication>,
     @InjectModel(Follow.name) private followModel: Model<Follow>,
     @InjectModel(PublicationReference.name) private referenceModel: Model<PublicationReference>,
+    @InjectModel(Profile.name) private profileModel: Model<Profile>,
   ) {}
 
   // ---------------- CREATE ----------------
@@ -67,6 +69,7 @@ export class PublicationsService {
     try {
       // the base model picks the right discriminator from `type`
       const created = await this.publicationModel.create(doc);
+      await this.recomputeStats(me);
       return this.getOwnedView(created._id);
     } catch (err) {
       this.rethrowDuplicate(err);
@@ -156,6 +159,7 @@ export class PublicationsService {
     } catch (err) {
       this.rethrowDuplicate(err);
     }
+    if ('year' in changes) await this.recomputeStats(me);
     return this.getOwnedView(existing._id);
   }
 
@@ -172,7 +176,42 @@ export class PublicationsService {
         { $set: { cited: null, status: ReferenceStatus.UNRESOLVED } },
       ),
     ]);
+    // publications that this one cited lose an incoming edge
+    await this.recomputeStats(me);
     return { deleted: true };
+  }
+
+  // ---------------- PROFILE STATS ----------------
+
+  /**
+   * Rebuilds the cached numbers on the owner's profile (publication count, citations, h-index,
+   * i10-index, per-year counts) so a profile read never has to touch the publications collection.
+   * Call after anything that adds/removes a publication or changes its citation count.
+   */
+  async recomputeStats(userId: string | Types.ObjectId) {
+    const pubs = await this.publicationModel
+      .find({ uploadedBy: userId })
+      .select('year metrics.citations')
+      .lean();
+
+    const cites = pubs.map((p) => p.metrics?.citations ?? 0).sort((a, b) => b - a);
+    const yearly = new Map<number, number>();
+    for (const p of pubs) yearly.set(p.year, (yearly.get(p.year) ?? 0) + 1);
+
+    await this.profileModel.updateOne(
+      { user: userId },
+      {
+        $set: {
+          publicationCount: pubs.length,
+          citationCount: cites.reduce((sum, c) => sum + c, 0),
+          hIndex: cites.filter((c, i) => c >= i + 1).length,
+          i10Index: cites.filter((c) => c >= 10).length,
+          yearlyPublications: [...yearly]
+            .map(([year, count]) => ({ year, count }))
+            .sort((a, b) => a.year - b.year),
+        },
+      },
+    );
   }
 
   /** Storage keys of an owned publication's files (the controller deletes them from storage). */

@@ -491,6 +491,9 @@ export class ReferencesService {
         },
       })),
     );
+    // citation totals / h-index on the owners' profiles depend on these counts
+    const owners = await this.publicationModel.distinct('uploadedBy', { _id: { $in: unique } });
+    await Promise.all(owners.map((owner) => this.publicationsService.recomputeStats(owner)));
   }
 
   // ---------------- HELPERS ----------------

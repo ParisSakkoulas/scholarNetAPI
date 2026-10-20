@@ -96,6 +96,9 @@ export class PublicationMetrics {
   @Prop({ default: 0 }) downloads!: number;
   @Prop({ default: 0 }) citations!: number;
   @Prop({ default: 0 }) reads!: number;
+  /** Cached from the ratings collection (1-5 stars). */
+  @Prop({ default: 0 }) ratingAvg!: number;
+  @Prop({ default: 0 }) ratingCount!: number;
 }
 export const PublicationMetricsSchema = SchemaFactory.createForClass(PublicationMetrics);
 

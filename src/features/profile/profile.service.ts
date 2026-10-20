@@ -16,6 +16,8 @@ import { EducationDto } from './dto/education.dto';
 import { SkillDto } from './dto/skill.dto';
 import { InterestDto } from './dto/interest.dto';
 import { Follow } from '../follows/schemas/follow.schema';
+import { ProfileView } from './schemas/profile-view.schema';
+import { Publication, PublicationVisibility } from '../publications/schemas/publication.schema';
 import {
   CONTACT_FIELDS,
   CONTACT_VISIBILITY_VALUES,
@@ -34,6 +36,8 @@ export class ProfileService {
     @InjectModel(Profile.name) private profileModel: Model<Profile>,
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Follow.name) private followModel: Model<Follow>,
+    @InjectModel(ProfileView.name) private profileViewModel: Model<ProfileView>,
+    @InjectModel(Publication.name) private publicationModel: Model<Publication>,
   ) {}
 
   /**
@@ -64,7 +68,48 @@ export class ProfileService {
   async getForViewer(userId: string, viewerId?: string | null) {
     const profile = await this.getByUserId(userId);
     const relation = await this.relationTo(viewerId, userId);
-    return redactContact(profile, relation);
+    const stats = await this.publicationStats(userId, relation);
+    return redactContact({ ...profile, ...stats }, relation);
+  }
+
+  /**
+   * Publication-derived stats, computed on read so they never go stale. Counts what the
+   * viewer can see: the owner sees everything, a connection sees public + followers,
+   * everyone else only public.
+   */
+  private async publicationStats(userId: string, relation: ViewerRelation) {
+    if (!Types.ObjectId.isValid(userId)) {
+      return { publicationCount: 0, citationCount: 0, hIndex: 0, i10Index: 0, yearlyPublications: [] };
+    }
+    const visibility =
+      relation === 'self'
+        ? undefined
+        : relation === 'connected'
+          ? { $in: [PublicationVisibility.PUBLIC, PublicationVisibility.FOLLOWERS] }
+          : PublicationVisibility.PUBLIC;
+    const uid = new Types.ObjectId(userId);
+
+    const pubs = await this.publicationModel
+      .find({
+        $or: [{ uploadedBy: uid }, { 'authors.user': uid }],
+        ...(visibility && { visibility }),
+      })
+      .select('year metrics.citations')
+      .lean();
+
+    const citations = pubs.map((p) => p.metrics?.citations ?? 0).sort((a, b) => b - a);
+    const byYear = new Map<number, number>();
+    for (const p of pubs) byYear.set(p.year, (byYear.get(p.year) ?? 0) + 1);
+
+    return {
+      publicationCount: pubs.length,
+      citationCount: citations.reduce((sum, c) => sum + c, 0),
+      hIndex: citations.filter((c, i) => c >= i + 1).length,
+      i10Index: citations.filter((c) => c >= 10).length,
+      yearlyPublications: [...byYear]
+        .map(([year, count]) => ({ year, count }))
+        .sort((a, b) => a.year - b.year),
+    };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<Profile> {
@@ -113,8 +158,26 @@ export class ProfileService {
     return profile;
   }
 
-  async incrementProfileView(userId: string): Promise<void> {
-    await this.profileModel.findOneAndUpdate({ user: userId }, { $inc: { profileViews: 1 } });
+  /**
+   * Counts one view per viewer per day. The owner's own visits never count; anonymous
+   * visitors are told apart by IP. A duplicate-key error means "already counted today".
+   */
+  async recordProfileView(userId: string, viewerId?: string | null, ip?: string): Promise<void> {
+    if (!Types.ObjectId.isValid(userId) || viewerId === userId) return;
+    const viewer = viewerId ? `u:${viewerId}` : ip ? `ip:${ip}` : null;
+    if (!viewer) return;
+
+    try {
+      await this.profileViewModel.create({
+        profile: userId,
+        viewer,
+        day: new Date().toISOString().slice(0, 10),
+      });
+    } catch (err) {
+      if ((err as { code?: number }).code === 11000) return;
+      throw err;
+    }
+    await this.profileModel.updateOne({ user: userId }, { $inc: { profileViews: 1 } });
   }
 
   // ---------------- POSITIONS ----------------

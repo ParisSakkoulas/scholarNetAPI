@@ -1,5 +1,5 @@
 /**
- * Dummy data for local development: 10 users (active, with profile) and 3-4 publications each,
+ * Dummy data for local development: 10 users (active, with profile) and 4 publications each,
  * plus mutual follows between neighbours so the messaging feature can be tried right away.
  *
  *   npm run seed:dummy            create (skips users that already exist)
@@ -58,6 +58,7 @@ const USERS: SeedUser[] = [
       ['Consensus Under Partial Synchrony at Scale', T.CONFERENCE_PAPER, 2021, ['consensus', 'raft']],
       ['Tail Latency in Geo-Replicated Databases', T.JOURNAL_ARTICLE, 2022, ['latency', 'replication']],
       ['Verifying Crash-Recovery Protocols', T.TECHNICAL_REPORT, 2023, ['verification', 'tla+']],
+      ['Leaderless Replication for Edge Clusters', T.PREPRINT, 2024, ['replication', 'edge']],
     ],
   },
   {
@@ -79,6 +80,7 @@ const USERS: SeedUser[] = [
       ['Seagrass Meadow Recovery After Marine Heatwaves', T.JOURNAL_ARTICLE, 2021, ['seagrass', 'climate']],
       ['Citizen Science Surveys of Mediterranean Fish', T.BOOK_CHAPTER, 2022, ['citizen science', 'fish']],
       ['Coastal Monitoring Time Series 2010-2022', T.DATASET, 2023, ['monitoring', 'time series']],
+      ['Ocean Acidification Effects on Coastal Shellfish', T.PREPRINT, 2024, ['acidification', 'shellfish']],
     ],
   },
   {
@@ -100,6 +102,7 @@ const USERS: SeedUser[] = [
       ['Diachronic Word Embeddings for Italian', T.JOURNAL_ARTICLE, 2021, ['embeddings', 'diachronic']],
       ['Annotation Guidelines for Dialect Corpora', T.TECHNICAL_REPORT, 2022, ['corpus', 'dialect']],
       ['Code-Switching Detection in Social Media', T.CONFERENCE_PAPER, 2023, ['code-switching', 'social media']],
+      ['Evaluating Language Models on Regional Italian', T.PREPRINT, 2024, ['evaluation', 'italian']],
     ],
   },
   {
@@ -121,6 +124,7 @@ const USERS: SeedUser[] = [
       ['Graph-Based Pan-Genome Assembly at Scale', T.JOURNAL_ARTICLE, 2023, ['pan-genome', 'assembly']],
       ['Variant Calling with Long-Read Sequencing', T.CONFERENCE_PAPER, 2022, ['variant calling', 'nanopore']],
       ['Single-Cell Atlas of Human Gut Tissue', T.DATASET, 2024, ['single-cell', 'atlas']],
+      ['Benchmarking Structural Variant Callers', T.PREPRINT, 2024, ['benchmark', 'structural variants']],
     ],
   },
   {
@@ -142,9 +146,39 @@ const USERS: SeedUser[] = [
       ['Downscaling Climate Projections with Deep Learning', T.JOURNAL_ARTICLE, 2023, ['downscaling', 'deep learning']],
       ['Extreme Precipitation Trends in Central Europe', T.JOURNAL_ARTICLE, 2021, ['precipitation', 'extremes']],
       ['Gridded European Temperature Dataset 1950-2023', T.DATASET, 2024, ['temperature', 'gridded']],
+      ['Attribution of Heatwave Intensity to Warming', T.CONFERENCE_PAPER, 2022, ['heatwaves', 'attribution']],
     ],
   },
 ];
+
+/**
+ * Citations per publication, in the same order as `pubs`, chosen so the profile stats differ:
+ *   username   citations           total  h-index  i10-index
+ *   elena      45, 22, 12, 3         82      3        3
+ *   marcus     120, 15, 9, 3        147      3        2
+ *   aiko       30, 28, 10, 1         69      3        3
+ *   sofia      8, 5, 2, 0            15      2        0
+ *   david      200, 60, 10, 2       272      3        3
+ *   maria      4, 3, 2, 1            10      2        0
+ *   nikos      10, 10, 10, 10        40      4        4
+ *   priya      0, 0, 0, 0             0      0        0
+ *   lucas      14, 9, 6, 2           31      3        1
+ *   hannah     75, 40, 25, 12       152      4        4
+ * h-index = largest h such that h publications have at least h citations each.
+ * i10-index = number of publications with at least 10 citations.
+ */
+const CITATIONS: Record<string, number[]> = {
+  _elena_p: [45, 22, 12, 3],
+  _marcus_l: [120, 15, 9, 3],
+  _aiko_t: [30, 28, 10, 1],
+  _sofia_m: [8, 5, 2, 0],
+  _david_o: [200, 60, 10, 2],
+  _maria_r: [4, 3, 2, 1],
+  _nikos_g: [10, 10, 10, 10],
+  _priya_s: [0, 0, 0, 0],
+  _lucas_m: [14, 9, 6, 2],
+  _hannah_b: [75, 40, 25, 12],
+};
 
 /** Required, type-specific fields (CLAUDE.md section 3). */
 function typeFields(type: PublicationType, u: SeedUser, i: number): Record<string, unknown> {
@@ -257,6 +291,7 @@ async function main() {
         identifiers: { doi: `10.9999/seed.${u.username.slice(1)}.${i + 1}` },
         visibility: 'public',
         uploadedBy: user._id,
+        metrics: { citations: CITATIONS[u.username]?.[i] ?? 0 },
         ...typeFields(type, u, i),
       });
       pubCount++;

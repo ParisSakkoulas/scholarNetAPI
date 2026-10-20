@@ -105,6 +105,9 @@ export class Profile extends Document {
   profileViews!: number;
 
   @Prop({ default: 0 })
+  publicationCount!: number;
+
+  @Prop({ default: 0 })
   citationCount!: number;
 
   @Prop({ default: 0 })
