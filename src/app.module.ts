@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { AuthorsModule } from './shared/authors/authors.module';
 import { VenuesModule } from './shared/venues/venues.module';
 import { ExternalSourcesModule } from './shared/external-sources/external-sources.module';
 import { DatabaseModule } from './database/database.module';
@@ -23,7 +22,6 @@ import { RatingsModule } from './features/ratings/ratings.module';
 
 @Module({
   imports: [
-    AuthorsModule,
     VenuesModule,
     ExternalSourcesModule,
     DatabaseModule,

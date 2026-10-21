@@ -12,6 +12,7 @@
     "seed:cite": "ts-node --transpile-only -r tsconfig-paths/register src/database/seeds/cite-publication.seed.ts",
     "seed:posts": "ts-node --transpile-only -r tsconfig-paths/register src/database/seeds/posts.seed.ts",
     "seed:profiles": "ts-node --transpile-only -r tsconfig-paths/register src/database/seeds/profile-details.seed.ts",
+    "seed:authors": "ts-node --transpile-only -r tsconfig-paths/register src/database/seeds/migrate-authors.seed.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -88,6 +89,9 @@
       "ts"
     ],
     "rootDir": "src",
+    "moduleNameMapper": {
+      "^src/(.*)$": "<rootDir>/$1"
+    },
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"

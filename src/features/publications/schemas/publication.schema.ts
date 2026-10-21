@@ -18,10 +18,19 @@ export enum PublicationFileRole {
   OTHER = 'other',
 }
 
+export enum AuthorStatus {
+  PENDING = 'pending',
+  CONFIRMED = 'confirmed',
+  DECLINED = 'declined',
+}
+
 // ---------------- SUBDOCUMENTS ----------------
 
-@Schema({ _id: false })
+/** Has an `_id` so the author endpoints can address one entry without relying on array order. */
+@Schema()
 export class PublicationAuthor {
+  _id?: mongoose.Types.ObjectId;
+
   /** Set when the author is a scholarNet user. */
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null })
   user?: mongoose.Types.ObjectId | null;
@@ -42,9 +51,19 @@ export class PublicationAuthor {
   @Prop({ default: false })
   isCorresponding?: boolean;
 
-  /** True once the linked user accepted the authorship. */
+  /**
+   * Linked users start as `pending` until they accept. Entries without a `user` have nobody to
+   * confirm them and are stored as `confirmed`.
+   */
+  @Prop({ type: String, enum: Object.values(AuthorStatus), default: AuthorStatus.CONFIRMED })
+  status?: AuthorStatus;
+
+  /** Mirrors `status === confirmed`; kept so older clients and seeds keep working. */
   @Prop({ default: false })
   confirmed?: boolean;
+
+  @Prop({ type: Date })
+  respondedAt?: Date;
 }
 export const PublicationAuthorSchema = SchemaFactory.createForClass(PublicationAuthor);
 
@@ -178,6 +197,7 @@ PublicationSchema.index(
   { language_override: 'textSearchLanguage', default_language: 'none' },
 );
 PublicationSchema.index({ 'authors.user': 1, year: -1 });
+PublicationSchema.index({ 'authors.user': 1, 'authors.status': 1 });
 PublicationSchema.index({ uploadedBy: 1, createdAt: -1 });
 PublicationSchema.index({ type: 1, year: -1 });
 // partialFilterExpression instead of `sparse`: identifiers is always present as a subdocument

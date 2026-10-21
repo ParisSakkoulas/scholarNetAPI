@@ -318,7 +318,8 @@ export class ReferencesService {
     return out;
   }
 
-  private async openAlex<T>(path: string, params: Record<string, string> = {}): Promise<T | null> {
+  /** Shared with the DOI importer. Returns null on 404. */
+  async openAlex<T>(path: string, params: Record<string, string> = {}): Promise<T | null> {
     const url = new URL(OPENALEX_URL + path);
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
     const mailto = this.config.get<string>('OPENALEX_MAILTO');

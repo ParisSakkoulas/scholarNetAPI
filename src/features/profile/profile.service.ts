@@ -18,6 +18,7 @@ import { InterestDto } from './dto/interest.dto';
 import { Follow } from '../follows/schemas/follow.schema';
 import { ProfileView } from './schemas/profile-view.schema';
 import { Publication, PublicationVisibility } from '../publications/schemas/publication.schema';
+import { authoredBy } from '../publications/author.util';
 import {
   CONTACT_FIELDS,
   CONTACT_VISIBILITY_VALUES,
@@ -91,7 +92,7 @@ export class ProfileService {
 
     const pubs = await this.publicationModel
       .find({
-        $or: [{ uploadedBy: uid }, { 'authors.user': uid }],
+        ...authoredBy(uid),
         ...(visibility && { visibility }),
       })
       .select('year metrics.citations')

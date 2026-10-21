@@ -22,6 +22,10 @@ import { ReferencesController } from './references.controller';
 import { PublicationFilesService } from './publication-files.service';
 import { PublicationFilesController } from './publication-files.controller';
 import { FileRequestsController } from './file-requests.controller';
+import { PublicationAuthorsService } from './publication-authors.service';
+import { PublicationAuthorsController } from './publication-authors.controller';
+import { PublicationImportService } from './publication-import.service';
+import { PublicationImportController } from './publication-import.controller';
 
 @Module({
   imports: [
@@ -53,8 +57,21 @@ import { FileRequestsController } from './file-requests.controller';
     ReferencesController,
     PublicationFilesController,
     FileRequestsController,
+    PublicationAuthorsController,
+    PublicationImportController,
   ],
-  providers: [PublicationsService, ReferencesService, PublicationFilesService],
-  exports: [PublicationsService, ReferencesService, PublicationFilesService],
+  providers: [
+    PublicationsService,
+    ReferencesService,
+    PublicationFilesService,
+    PublicationAuthorsService,
+    PublicationImportService,
+  ],
+  exports: [
+    PublicationsService,
+    ReferencesService,
+    PublicationFilesService,
+    PublicationAuthorsService,
+  ],
 })
 export class PublicationsModule {}

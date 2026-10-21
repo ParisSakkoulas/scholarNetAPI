@@ -19,6 +19,7 @@ import { parsePaging } from 'src/common/utils/paging';
 import { PublicationQuery, PublicationsService } from './publications.service';
 import { ReferencesService } from './references.service';
 import { PublicationFilesService } from './publication-files.service';
+import { PublicationAuthorsService } from './publication-authors.service';
 import { CreatePublicationDto } from './dto/create-publication.dto';
 import { UpdatePublicationDto } from './dto/update-publication.dto';
 
@@ -34,6 +35,7 @@ export class PublicationsController {
     private readonly publicationsService: PublicationsService,
     private readonly referencesService: ReferencesService,
     private readonly filesService: PublicationFilesService,
+    private readonly authorsService: PublicationAuthorsService,
   ) {}
 
   // ---------------- CREATE ----------------
@@ -43,6 +45,8 @@ export class PublicationsController {
     const created = await this.publicationsService.create(user.userId, dto);
     // background: link waiting references and import its reference list; never blocks the response
     void this.referencesService.onPublicationSaved(String(created!._id));
+    // invite the listed members; also in the background
+    void this.authorsService.notifyInvites(user.userId, String(created!._id));
     return created;
   }
 
@@ -78,7 +82,7 @@ export class PublicationsController {
     return this.publicationsService.getOne(user.userId, id);
   }
 
-  // ---------------- UPDATE / DELETE (uploader only) ----------------
+  // ---------------- UPDATE (uploader or confirmed co-author) / DELETE (uploader only) ----------------
 
   @Patch(':id')
   async update(@CurrentUser() user, @Param('id') id: string, @Body() dto: UpdatePublicationDto) {

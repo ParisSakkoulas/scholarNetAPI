@@ -16,6 +16,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PublicationType } from 'src/common/enums/publication-type.enum';
@@ -26,10 +27,12 @@ export class PublicationAuthorDto {
   @IsMongoId()
   user?: string;
 
+  /** Optional for scholarNet members: the server fills it from their account. */
+  @ValidateIf((o: PublicationAuthorDto) => !o.user)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
-  name!: string;
+  name?: string;
 
   @IsOptional()
   @IsString()
