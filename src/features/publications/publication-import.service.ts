@@ -14,9 +14,12 @@ import { Profile } from '../profile/schemas/profile.schema';
 import { PublicationsService } from './publications.service';
 import { ReferencesService } from './references.service';
 import { CreatePublicationDto } from './dto/create-publication.dto';
-import { DOI_PATTERN, ImportPublicationDto } from './dto/import-publication.dto';
+import { SourceCache } from './schemas/source-cache.schema';
+import { DOI_PATTERN, ImportPublicationDto, ImportSource } from './dto/import-publication.dto';
 import { normalizeDoi, shortOpenAlexId } from './reference.util';
+import { fetchWithRetry } from './source-http.util';
 import {
+  CrossrefWork,
   DblpInfo,
   ImportDraft,
   OPENALEX_SELECT,
@@ -25,11 +28,14 @@ import {
   cleanOrcid,
   dblpHasDoi,
   findSelf,
+  fromCrossref,
   fromDblp,
   fromOpenAlex,
 } from './import.util';
 
 const DBLP_URL = 'https://dblp.org/search/publ/api';
+const CROSSREF_URL = 'https://api.crossref.org/works';
+const SOURCE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type SourceResult =
   | { status: 'found'; draft: ImportDraft }
@@ -49,6 +55,7 @@ export class PublicationImportService {
     @InjectModel(Publication.name) private publicationModel: Model<Publication>,
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Profile.name) private profileModel: Model<Profile>,
+    @InjectModel(SourceCache.name) private cacheModel: Model<SourceCache>,
     private publicationsService: PublicationsService,
     private referencesService: ReferencesService,
     private config: ConfigService,
@@ -58,9 +65,10 @@ export class PublicationImportService {
 
   async lookup(me: string, rawDoi: string) {
     const doi = this.parseDoi(rawDoi);
-    const [openalex, dblpByDoi, existing] = await Promise.all([
+    const [openalex, dblpByDoi, crossref, existing] = await Promise.all([
       this.fromOpenAlexSafe(doi),
       this.fromDblpSafe(doi),
+      this.fromCrossrefSafe(doi),
       this.findExisting(me, doi),
     ]);
 
@@ -69,7 +77,7 @@ export class PublicationImportService {
     if (dblp.status === 'not_found' && openalex.status === 'found') {
       dblp = await this.fromDblpSafe(doi, openalex.draft.title);
     }
-    return { doi, existing, sources: { openalex, dblp } };
+    return { doi, existing, sources: { openalex, dblp, crossref } };
   }
 
   // ---------------- BY AUTHOR NAME ----------------
@@ -145,8 +153,8 @@ export class PublicationImportService {
     }
 
     const draft = result.draft;
-    const { source, sourceUrl, warnings, authors, ...fields } = draft;
-    void source, sourceUrl; // only for the preview, not stored
+    const { source, sourceUrl, fetchedAt, warnings, authors, ...fields } = draft;
+    void source, sourceUrl, fetchedAt; // only for the preview, not stored
     const created = await this.publicationsService.create(me, {
       ...fields,
       authors: await this.withCurrentUser(me, authors),
@@ -185,7 +193,9 @@ export class PublicationImportService {
   // ---------------- SOURCES ----------------
 
   private fetchFrom(source: ImportPublicationDto['source'], doi: string) {
-    return source === 'openalex' ? this.fromOpenAlexSafe(doi) : this.fromDblpWithFallback(doi);
+    if (source === 'openalex') return this.fromOpenAlexSafe(doi);
+    if (source === 'crossref') return this.fromCrossrefSafe(doi);
+    return this.fromDblpWithFallback(doi);
   }
 
   /** DBLP by DOI, then by the OpenAlex title (used on import, where only DBLP was picked). */
@@ -196,7 +206,81 @@ export class PublicationImportService {
     return oa.status === 'found' ? this.fromDblpSafe(doi, oa.draft.title) : byDoi;
   }
 
-  private async fromOpenAlexSafe(doi: string): Promise<SourceResult> {
+  private fromOpenAlexSafe(doi: string) {
+    return this.cached('openalex', doi, () => this.fetchOpenAlex(doi));
+  }
+
+  private fromDblpSafe(doi: string, title?: string) {
+    return this.cached('dblp', doi, () => this.fetchDblp(doi, title));
+  }
+
+  private fromCrossrefSafe(doi: string) {
+    return this.cached('crossref', doi, () => this.fetchCrossref(doi));
+  }
+
+  /**
+   * Found records are kept for a day so the same DOI is not fetched twice (the preview and the
+   * import both ask). Misses and errors are never cached. The cache is best effort: if MongoDB
+   * fails, the source is queried as before.
+   */
+  private async cached(
+    source: ImportSource,
+    doi: string,
+    load: () => Promise<SourceResult>,
+  ): Promise<SourceResult> {
+    try {
+      const hit = await this.cacheModel.findOne({ source, doi, expiresAt: { $gt: new Date() } }).lean();
+      if (hit) return { status: 'found', draft: hit.draft as unknown as ImportDraft };
+    } catch (err) {
+      this.logger.warn(`Source cache read failed for ${source} ${doi}: ${(err as Error).message}`);
+    }
+
+    const result = await load();
+    if (result.status !== 'found') return result;
+
+    result.draft.fetchedAt = new Date().toISOString();
+    try {
+      await this.cacheModel.updateOne(
+        { source, doi },
+        { $set: { draft: result.draft, expiresAt: new Date(Date.now() + SOURCE_CACHE_TTL_MS) } },
+        { upsert: true },
+      );
+    } catch (err) {
+      this.logger.warn(`Source cache write failed for ${source} ${doi}: ${(err as Error).message}`);
+    }
+    return result;
+  }
+
+  private async fetchCrossref(doi: string): Promise<SourceResult> {
+    try {
+      const url = new URL(`${CROSSREF_URL}/${encodeURIComponent(doi)}`);
+      const mailto = this.config.get<string>('OPENALEX_MAILTO');
+      if (mailto) url.searchParams.set('mailto', mailto); // polite pool
+
+      const res = await fetchWithRetry(url, {
+        headers: {
+          'User-Agent': `ScholarNet/1.0${mailto ? ` (mailto:${mailto})` : ''}`,
+          Accept: 'application/json',
+        },
+      });
+      if (res.status === 404) return { status: 'not_found' };
+      if (!res.ok) {
+        this.logger.warn(`Crossref answered ${res.status} for ${doi}`);
+        return { status: 'error', message: 'Crossref is not available right now.' };
+      }
+
+      const body = (await res.json()) as { message?: CrossrefWork };
+      if (!body.message) return { status: 'not_found' };
+      const draft = fromCrossref(body.message, doi);
+      if (!draft) return { status: 'error', message: 'Crossref has no title or year for this DOI.' };
+      return { status: 'found', draft };
+    } catch (err) {
+      this.logger.warn(`Crossref lookup failed for ${doi}: ${(err as Error).message}`);
+      return { status: 'error', message: 'Could not reach Crossref.' };
+    }
+  }
+
+  private async fetchOpenAlex(doi: string): Promise<SourceResult> {
     try {
       const work = await this.referencesService.openAlex<OpenAlexWork>(`/works/https://doi.org/${doi}`, {
         select: OPENALEX_SELECT,
@@ -212,7 +296,7 @@ export class PublicationImportService {
   }
 
   /** Searches by DOI, or by `title` when given. Only a hit carrying exactly this DOI counts. */
-  private async fromDblpSafe(doi: string, title?: string): Promise<SourceResult> {
+  private async fetchDblp(doi: string, title?: string): Promise<SourceResult> {
     try {
       const url = new URL(DBLP_URL);
       url.searchParams.set('q', title ?? doi);
@@ -220,12 +304,11 @@ export class PublicationImportService {
       url.searchParams.set('h', '20');
 
       const mailto = this.config.get<string>('OPENALEX_MAILTO');
-      const res = await fetch(url, {
+      const res = await fetchWithRetry(url, {
         headers: {
           'User-Agent': `ScholarNet/1.0${mailto ? ` (mailto:${mailto})` : ''}`,
           Accept: 'application/json',
         },
-        signal: AbortSignal.timeout(15000),
       });
       // dblp.org sometimes answers with an HTML bot-check page instead of JSON
       const type = res.headers.get('content-type') ?? '';

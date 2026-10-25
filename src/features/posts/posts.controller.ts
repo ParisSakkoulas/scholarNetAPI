@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { parsePaging } from 'src/common/utils/paging';
@@ -41,6 +41,21 @@ export class PostsController {
     return this.postsService.getOne(user.userId, postId);
   }
 
+  @Patch(':postId')
+  edit(@CurrentUser() user, @Param('postId') postId: string, @Body() dto: CreatePostDto) {
+    return this.postsService.edit(user.userId, postId, dto.content);
+  }
+
+  @Post(':postId/report')
+  report(
+    @CurrentUser() user,
+    @Param('postId') postId: string,
+    @Body('reason') reason: string,
+    @Body('details') details?: string,
+  ) {
+    return this.postsService.report(user.userId, postId, reason, details);
+  }
+
   @Delete(':postId')
   remove(@CurrentUser() user, @Param('postId') postId: string) {
     return this.postsService.remove(user.userId, postId);
@@ -49,8 +64,12 @@ export class PostsController {
   // ---------------- LIKES ----------------
 
   @Post(':postId/like')
-  like(@CurrentUser() user, @Param('postId') postId: string) {
-    return this.postsService.like(user.userId, postId);
+  like(
+    @CurrentUser() user,
+    @Param('postId') postId: string,
+    @Body('type') type?: string,
+  ) {
+    return this.postsService.like(user.userId, postId, type);
   }
 
   @Delete(':postId/like')

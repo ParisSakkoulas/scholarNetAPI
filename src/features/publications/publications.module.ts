@@ -10,7 +10,8 @@ import {
   PublicationReference,
   PublicationReferenceSchema,
 } from './schemas/publication-reference.schema';
-import { FileAccessRequest, FileAccessRequestSchema } from './schemas/file-access-request.schema';
+import { SourceCache, SourceCacheSchema } from './schemas/source-cache.schema';
+import { FileAccessRequest,FileAccessRequestSchema } from './schemas/file-access-request.schema';
 import { Follow, FollowSchema } from '../follows/schemas/follow.schema';
 import { User, UserSchema } from '../users/schema/user.schema';
 import { Profile, ProfileSchema } from '../profile/schemas/profile.schema';
@@ -37,6 +38,7 @@ import { PublicationImportController } from './publication-import.controller';
       },
       { name: PublicationReference.name, schema: PublicationReferenceSchema },
       { name: FileAccessRequest.name, schema: FileAccessRequestSchema },
+      { name: SourceCache.name, schema: SourceCacheSchema },
       { name: Follow.name, schema: FollowSchema },
       { name: User.name, schema: UserSchema },
       { name: Profile.name, schema: ProfileSchema },

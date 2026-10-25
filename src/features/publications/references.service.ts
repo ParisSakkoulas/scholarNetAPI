@@ -25,6 +25,8 @@ import {
   shortOpenAlexId,
 } from './reference.util';
 
+import { fetchWithRetry } from './source-http.util';
+
 const OPENALEX_URL = 'https://api.openalex.org';
 const OPENALEX_BATCH = 100;
 const WORK_CARD_FIELDS = 'title type year authors.name identifiers.doi';
@@ -327,7 +329,7 @@ export class ReferencesService {
 
     let res: Response;
     try {
-      res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      res = await fetchWithRetry(url);
     } catch {
       throw new BadGatewayException('Could not reach OpenAlex.');
     }

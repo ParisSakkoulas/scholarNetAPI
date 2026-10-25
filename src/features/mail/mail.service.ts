@@ -6,6 +6,7 @@ import { Transporter } from 'nodemailer';
 import { activationTemplate, resetPasswordTemplate } from './templates';
 import { emailChangeTemplate } from './templates/emailChange.template';
 import { emailChangedNoticeTemplate } from './templates/emailChangedNotice.template';
+import { supervisionInviteTemplate } from './templates/supervisionInvite.template';
 import { accountLockedTemplate } from './templates/accountLocked.template';
 import { MAX_LOGIN_ATTEMPTS, UNLOCK_TOKEN_TTL_HOURS } from '../auth/constants/auth.constants';
 
@@ -114,6 +115,19 @@ export class MailService {
         `${UNLOCK_TOKEN_TTL_HOURS} hour`,
       ),
       text: `Your ScholarNet account was locked after ${MAX_LOGIN_ATTEMPTS} failed login attempts. Unlock it here: ${unlockLink}`,
+    });
+  }
+
+  /** Invites someone who has no account yet; the invite is claimed when they sign up with this address. */
+  async sendSupervisionInviteEmail(to: string, studentName: string, title: string): Promise<void> {
+    const clientUrl = this.config.get<string>('app.clientUrl');
+    const registerLink = `${clientUrl}/auth/register`;
+
+    await this.sendMail({
+      to,
+      subject: `${studentName} invited you to supervise their thesis on ScholarNet`,
+      html: supervisionInviteTemplate(studentName, title, registerLink),
+      text: `${studentName} invited you to supervise "${title}" on ScholarNet. Create an account with this email address to answer: ${registerLink}`,
     });
   }
 }

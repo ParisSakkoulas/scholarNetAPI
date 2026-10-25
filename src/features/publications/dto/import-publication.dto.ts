@@ -1,7 +1,7 @@
 import { IsEnum, IsIn, IsOptional, IsString, Matches } from 'class-validator';
 import { PublicationVisibility } from '../schemas/publication.schema';
 
-export const IMPORT_SOURCES = ['openalex', 'dblp'] as const;
+export const IMPORT_SOURCES = ['openalex', 'dblp', 'crossref'] as const;
 export type ImportSource = (typeof IMPORT_SOURCES)[number];
 
 /** The DOI as typed by the user; "https://doi.org/..." is accepted and normalized. */

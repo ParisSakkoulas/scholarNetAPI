@@ -1,5 +1,5 @@
 import { PublicationType } from 'src/common/enums/publication-type.enum';
-import { abstractFromIndex, dblpHasDoi, findSelf, fromDblp, fromOpenAlex } from './import.util';
+import { abstractFromIndex, dblpHasDoi, findSelf, fromCrossref, fromDblp, fromOpenAlex } from './import.util';
 
 const doi = '10.1000/xyz';
 
@@ -85,6 +85,52 @@ describe('fromDblp', () => {
     )!;
     expect(d.type).toBe(PublicationType.PREPRINT);
     expect(d.authors).toHaveLength(1);
+  });
+});
+
+describe('fromCrossref', () => {
+  const work = {
+    URL: 'https://doi.org/10.1000/xyz',
+    type: 'journal-article',
+    title: ['A Paper'],
+    'container-title': ['Nature'],
+    publisher: 'Springer',
+    volume: '3',
+    issue: '2',
+    page: '10-20',
+    issued: { 'date-parts': [[2021, 5, 4]] },
+    author: [
+      { given: 'Ada', family: 'Lovelace', ORCID: 'http://orcid.org/0000-0002-1825-0097', affiliation: [{ name: 'Uni A' }] },
+      { name: 'The Consortium' },
+    ],
+  };
+
+  it('maps a journal article without an abstract', () => {
+    const d = fromCrossref(work, doi)!;
+    expect(d.type).toBe(PublicationType.JOURNAL_ARTICLE);
+    expect(d.journalName).toBe('Nature');
+    expect(d.year).toBe(2021);
+    expect(d.publishedAt).toBe('2021-05-04');
+    expect(d.abstract).toBeUndefined();
+    expect(d.authors).toEqual([
+      { name: 'Ada Lovelace', orcid: '0000-0002-1825-0097', affiliation: 'Uni A', order: 0 },
+      { name: 'The Consortium', orcid: undefined, affiliation: undefined, order: 1 },
+    ]);
+  });
+
+  it('keeps only the year when the date is partial, and returns null without title or year', () => {
+    expect(fromCrossref({ ...work, issued: { 'date-parts': [[2020]] } }, doi)!.publishedAt).toBeUndefined();
+    expect(fromCrossref({ ...work, title: [] }, doi)).toBeNull();
+    expect(fromCrossref({ ...work, issued: undefined }, doi)).toBeNull();
+  });
+
+  it('maps preprints and falls back to "Other" with a warning', () => {
+    const pre = fromCrossref({ ...work, type: 'posted-content', subtype: 'preprint', 'container-title': [] }, '10.48550/arxiv.1');
+    expect(pre!.type).toBe(PublicationType.PREPRINT);
+    expect(pre!.server).toBe('arxiv');
+    const other = fromCrossref({ ...work, 'container-title': [] }, doi)!;
+    expect(other.type).toBe(PublicationType.OTHER);
+    expect(other.warnings[0]).toMatch(/Other/);
   });
 });
 

@@ -7,6 +7,8 @@ import { normalizeDoi, shortOpenAlexId } from './reference.util';
 export interface ImportDraft {
   source: ImportSource;
   sourceUrl?: string;
+  /** When the source was queried (ISO date); kept from the first fetch when served from the cache. */
+  fetchedAt?: string;
   /** Things the user should know before agreeing (author list cut, imported as "Other"...). */
   warnings: string[];
   type: PublicationType;
@@ -284,6 +286,135 @@ export function fromDblp(info: DblpInfo, doi: string): ImportDraft | null {
     fields: [],
     identifiers: { doi },
     url: info.ee?.startsWith('http') ? info.ee : `https://doi.org/${doi}`,
+    authors,
+    ...specific,
+  } as unknown as ImportDraft;
+}
+
+// ---------------- CROSSREF ----------------
+
+export interface CrossrefWork {
+  DOI?: string;
+  URL?: string;
+  type?: string;
+  subtype?: string;
+  title?: string[];
+  'container-title'?: string[];
+  publisher?: string;
+  institution?: { name?: string }[];
+  volume?: string;
+  issue?: string;
+  page?: string;
+  language?: string;
+  subject?: string[];
+  issued?: { 'date-parts'?: (number | null)[][] };
+  author?: {
+    given?: string;
+    family?: string;
+    name?: string;
+    ORCID?: string;
+    affiliation?: { name?: string }[];
+  }[];
+}
+
+/** Crossref gives the date as [[year, month, day]], with month and day optional. */
+function crossrefDate(w: CrossrefWork): { year?: number; publishedAt?: string } {
+  const [year, month, day] = w.issued?.['date-parts']?.[0] ?? [];
+  if (!year) return {};
+  const full = year && month && day ? [year, month, day].map((n, i) => String(n).padStart(i ? 2 : 4, '0')).join('-') : undefined;
+  return { year, publishedAt: full };
+}
+
+/**
+ * The abstract is left out on purpose: Crossref abstracts belong to the publisher and may not be
+ * shown publicly. Use the OpenAlex draft when an abstract is needed.
+ */
+export function fromCrossref(w: CrossrefWork, doi: string): ImportDraft | null {
+  const title = cut(w.title?.[0], 500);
+  const { year, publishedAt } = crossrefDate(w);
+  if (!title || !year || year < 1800) return null;
+
+  const warnings: string[] = [];
+  const venue = cut(w['container-title']?.[0], 300);
+  const publisher = cut(w.publisher, 300);
+  const pages = w.page;
+
+  let specific: Record<string, unknown>;
+  switch (w.type) {
+    case 'journal-article':
+      specific = venue
+        ? { type: PublicationType.JOURNAL_ARTICLE, journalName: venue, volume: w.volume, issue: w.issue, pages, publisher }
+        : otherOf('journal article', 'journal name', warnings);
+      break;
+    case 'proceedings-article':
+      specific = venue
+        ? { type: PublicationType.CONFERENCE_PAPER, conferenceName: venue, proceedingsTitle: venue, pages, publisher }
+        : otherOf('conference paper', 'conference name', warnings);
+      break;
+    case 'book':
+    case 'monograph':
+    case 'edited-book':
+    case 'reference-book':
+      specific = publisher ? { type: PublicationType.BOOK, publisher } : otherOf('book', 'publisher', warnings);
+      break;
+    case 'book-chapter':
+    case 'book-section':
+    case 'book-part':
+      specific =
+        venue && publisher
+          ? { type: PublicationType.BOOK_CHAPTER, bookTitle: venue, publisher, pages }
+          : otherOf('book chapter', 'book title or publisher', warnings);
+      break;
+    case 'posted-content':
+      specific =
+        w.subtype === 'preprint' || !w.subtype
+          ? { type: PublicationType.PREPRINT, server: preprintServer(doi, `${venue ?? ''} ${publisher ?? ''}`) }
+          : { type: PublicationType.OTHER, customType: 'Posted content' };
+      break;
+    case 'dataset': {
+      const repository = venue ?? publisher;
+      specific = repository
+        ? { type: PublicationType.DATASET, repository }
+        : otherOf('dataset', 'repository', warnings);
+      break;
+    }
+    case 'report': {
+      const institution = cut(w.institution?.[0]?.name, 300) ?? publisher;
+      specific = institution
+        ? { type: PublicationType.TECHNICAL_REPORT, institution }
+        : otherOf('report', 'institution', warnings);
+      break;
+    }
+    case 'dissertation':
+      specific = { type: PublicationType.OTHER, customType: 'Dissertation' };
+      warnings.push('Imported as "Other": the source does not say which degree this thesis is for.');
+      break;
+    default:
+      specific = { type: PublicationType.OTHER, customType: w.type };
+  }
+
+  const authors = finishAuthors(
+    (w.author ?? []).map((a) => ({
+      name: a.name || [a.given, a.family].filter(Boolean).join(' '),
+      orcid: cleanOrcid(a.ORCID),
+      affiliation: a.affiliation?.[0]?.name,
+    })),
+    warnings,
+  );
+  warnings.push('Crossref abstracts are not imported, so the record will not have one.');
+
+  return {
+    source: 'crossref',
+    sourceUrl: w.URL ?? `https://doi.org/${doi}`,
+    warnings,
+    title,
+    year,
+    publishedAt,
+    language: /^[a-z]{2}$/i.test(w.language ?? '') ? w.language!.toLowerCase() : undefined,
+    keywords: [],
+    fields: (w.subject ?? []).map((s) => cut(s, 100)).filter(Boolean).slice(0, 3) as string[],
+    identifiers: { doi },
+    url: `https://doi.org/${doi}`,
     authors,
     ...specific,
   } as unknown as ImportDraft;

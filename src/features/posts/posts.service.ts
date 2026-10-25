@@ -7,8 +7,9 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Post } from './schemas/post.schema';
-import { PostLike } from './schemas/post-like.schema';
+import { PostLike, REACTION_TYPES, ReactionType } from './schemas/post-like.schema';
 import { PostComment } from './schemas/post-comment.schema';
+import { PostReport, REPORT_REASONS } from './schemas/post-report.schema';
 import { Follow } from '../follows/schemas/follow.schema';
 import { User } from '../users/schema/user.schema';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -24,6 +25,7 @@ export class PostsService {
     @InjectModel(Post.name) private postModel: Model<Post>,
     @InjectModel(PostLike.name) private likeModel: Model<PostLike>,
     @InjectModel(PostComment.name) private commentModel: Model<PostComment>,
+    @InjectModel(PostReport.name) private reportModel: Model<PostReport>,
     @InjectModel(Follow.name) private followModel: Model<Follow>,
     @InjectModel(User.name) private userModel: Model<User>,
     private notificationsService: NotificationsService,
@@ -35,7 +37,7 @@ export class PostsService {
     const text = this.cleanText(content, MAX_POST_LENGTH, 'Post');
     const post = await this.postModel.create({ author: me, content: text });
     await post.populate('author', AUTHOR_FIELDS);
-    return { ...post.toObject(), likedByMe: false };
+    return { ...post.toObject(), likedByMe: false, myReaction: null, reactions: {} };
   }
 
   /** Posts from the people I follow, plus my own, newest first. */
@@ -59,6 +61,47 @@ export class PostsService {
     return decorated;
   }
 
+  /** Only the author can edit. The text is stored as given and the post is marked as edited. */
+  async edit(me: string, postId: string, content: string) {
+    this.assertId(postId, 'post');
+    const text = this.cleanText(content, MAX_POST_LENGTH, 'Post');
+    const post = await this.postModel.findById(postId);
+    if (!post) throw new NotFoundException('Post not found.');
+    if (String(post.author) !== me) throw new ForbiddenException('You can only edit your own posts.');
+    if (post.content !== text) {
+      post.content = text;
+      post.editedAt = new Date();
+      await post.save();
+    }
+    const populated = await this.postModel.findById(postId).populate('author', AUTHOR_FIELDS).lean();
+    const [decorated] = await this.decorate([populated!], me);
+    return decorated;
+  }
+
+  /** Flags someone else's post. Reporting twice is a no-op. */
+  async report(me: string, postId: string, reason: string, details?: string) {
+    this.assertId(postId, 'post');
+    if (!(REPORT_REASONS as readonly string[]).includes(reason)) {
+      throw new BadRequestException('Pick a reason for the report.');
+    }
+    const post = await this.postModel.findById(postId).select('author').lean();
+    if (!post) throw new NotFoundException('Post not found.');
+    if (String(post.author) === me) throw new BadRequestException('You cannot report your own post.');
+    await this.reportModel.updateOne(
+      { post: postId, reporter: me },
+      {
+        $setOnInsert: {
+          post: postId,
+          reporter: me,
+          reason,
+          details: typeof details === 'string' ? details.trim().slice(0, 1000) : '',
+        },
+      },
+      { upsert: true },
+    );
+    return { reported: true };
+  }
+
   /** Only the author can delete; likes, comments and related notifications go with it. */
   async remove(me: string, postId: string) {
     this.assertId(postId, 'post');
@@ -69,6 +112,7 @@ export class PostsService {
     await Promise.all([
       this.postModel.deleteOne({ _id: postId }),
       this.likeModel.deleteMany({ post: postId }),
+      this.reportModel.deleteMany({ post: postId }),
       this.commentModel.deleteMany({ post: postId }),
       this.notificationsService.removeByEntity('post', postId),
     ]);
@@ -77,33 +121,44 @@ export class PostsService {
 
   // ---------------- LIKES ----------------
 
-  /** Idempotent: liking twice neither double-counts nor re-notifies. */
-  async like(me: string, postId: string) {
+  /**
+   * React to a post. Idempotent: reacting twice neither double-counts nor re-notifies, and
+   * reacting again with another type just changes the reaction.
+   */
+  async like(me: string, postId: string, type: string = 'like') {
     this.assertId(postId, 'post');
+    if (!(REACTION_TYPES as readonly string[]).includes(type)) {
+      throw new BadRequestException('Unknown reaction.');
+    }
     const post = await this.postModel.findById(postId).select('author').lean();
     if (!post) throw new NotFoundException('Post not found.');
 
-    const res = await this.likeModel.updateOne(
+    // returns the row as it was before: null means this is a new reaction
+    const before = await this.likeModel.findOneAndUpdate(
       { post: postId, user: me },
-      { $setOnInsert: { post: postId, user: me } },
-      { upsert: true },
+      { $set: { type }, $setOnInsert: { post: postId, user: me } },
+      { upsert: true, new: false },
     );
 
-    if (res.upsertedCount === 1) {
+    if (!before) {
       await this.postModel.updateOne({ _id: postId }, { $inc: { likesCount: 1 } });
       const name = await this.displayName(me);
       await this.notificationsService.create({
         recipientId: post.author,
         actorId: me,
         type: NotificationType.POST_LIKED,
-        message: `${name} liked your post`,
+        message:
+          type === 'like'
+            ? `${name} liked your post`
+            : `${name} reacted "${type}" to your post`,
         entityType: 'post',
         entityId: postId,
       });
     }
 
     const likesCount = await this.currentCount(postId, 'likesCount');
-    return { liked: true, likesCount };
+    const [reactions] = await this.reactionCounts([postId]);
+    return { liked: true, likesCount, myReaction: type, reactions: reactions ?? {} };
   }
 
   async unlike(me: string, postId: string) {
@@ -124,7 +179,8 @@ export class PostsService {
     }
 
     const likesCount = await this.currentCount(postId, 'likesCount');
-    return { liked: false, likesCount };
+    const [reactions] = await this.reactionCounts([postId]);
+    return { liked: false, likesCount, myReaction: null, reactions: reactions ?? {} };
   }
 
   // ---------------- COMMENTS ----------------
@@ -210,15 +266,39 @@ export class PostsService {
     return { data: await this.decorate(posts, me), total, page, limit };
   }
 
-  /** Adds `likedByMe` to each post with a single query. */
+  /** Adds my reaction and the reaction breakdown to each post (two queries for the whole page). */
   private async decorate<T extends { _id: Types.ObjectId }>(posts: T[], me: string) {
     if (!posts.length) return [];
-    const liked = await this.likeModel
-      .find({ user: me, post: { $in: posts.map((p) => p._id) } })
-      .select('post')
-      .lean();
-    const likedIds = new Set(liked.map((l) => String(l.post)));
-    return posts.map((p) => ({ ...p, likedByMe: likedIds.has(String(p._id)) }));
+    const ids = posts.map((p) => p._id);
+    const [mine, breakdown] = await Promise.all([
+      this.likeModel.find({ user: me, post: { $in: ids } }).select('post type').lean(),
+      this.reactionCounts(ids),
+    ]);
+    const myTypes = new Map(mine.map((l) => [String(l.post), l.type ?? 'like']));
+    return posts.map((p, i) => ({
+      ...p,
+      likedByMe: myTypes.has(String(p._id)),
+      myReaction: myTypes.get(String(p._id)) ?? null,
+      reactions: breakdown[i] ?? {},
+    }));
+  }
+
+  /** Reactions per post, in the same order as `postIds`: { like: 3, love: 1 }. Rows with no type are likes. */
+  private async reactionCounts(postIds: (Types.ObjectId | string)[]) {
+    const ids = postIds.map((id) => new Types.ObjectId(String(id)));
+    const rows = await this.likeModel.aggregate<{
+      _id: { post: Types.ObjectId; type: ReactionType };
+      n: number;
+    }>([
+      { $match: { post: { $in: ids } } },
+      { $group: { _id: { post: '$post', type: { $ifNull: ['$type', 'like'] } }, n: { $sum: 1 } } },
+    ]);
+    const byPost = new Map<string, Partial<Record<ReactionType, number>>>();
+    for (const r of rows) {
+      const key = String(r._id.post);
+      byPost.set(key, { ...byPost.get(key), [r._id.type]: r.n });
+    }
+    return ids.map((id) => byPost.get(String(id)) ?? {});
   }
 
   private async currentCount(postId: string, field: 'likesCount' | 'commentsCount') {

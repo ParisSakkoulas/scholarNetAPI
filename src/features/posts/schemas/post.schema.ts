@@ -16,6 +16,10 @@ export class Post extends Document {
   @Prop({ default: 0, min: 0 })
   commentsCount!: number;
 
+  /** set when the author changes the text after publishing */
+  @Prop({ type: Date, default: null })
+  editedAt?: Date | null;
+
   createdAt!: Date;
   updatedAt!: Date;
 }
