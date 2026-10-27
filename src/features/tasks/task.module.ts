@@ -10,6 +10,8 @@ import { TeamsModule } from '../teams/teams.module';
 import { ActivityModule } from '../activity/activity.module';
 
 import { ColumnSchema, Column } from '../projects/schema/column.schema';
+import { Project, ProjectSchema } from '../projects/schema/project.schema';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -17,9 +19,11 @@ import { ColumnSchema, Column } from '../projects/schema/column.schema';
       { name: Task.name, schema: TaskSchema },
       { name: Comment.name, schema: CommentSchema },
       { name: Column.name, schema: ColumnSchema },
+      { name: Project.name, schema: ProjectSchema },
     ]),
     TeamsModule,
     ActivityModule,
+    NotificationsModule,
   ],
   controllers: [TasksController, CommentsController],
   providers: [TasksService, CommentsService],

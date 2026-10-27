@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Injectable,
   Param,
   Patch,
   Post,
@@ -18,7 +17,8 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
+import { UserThrottlerGuard } from '../../common/guards/user-throttler.guard';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Access, SupervisionAccess, SupervisionAccessGuard } from './guards/supervision-access.guard';
@@ -33,13 +33,7 @@ import {
   UploadVersionDto,
 } from './dto/thesis-document.dto';
 
-/** Rate limits count per signed-in user (this guard runs after JwtAuthGuard), not per IP. */
-@Injectable()
-export class UserThrottlerGuard extends ThrottlerGuard {
-  protected getTracker(req: Record<string, any>): Promise<string> {
-    return Promise.resolve(String(req.user?.userId ?? req.ip));
-  }
-}
+export { UserThrottlerGuard };
 
 /** Hard ceiling for multer's in-memory buffer; the configurable limit is checked in the service. */
 const MULTER_CEILING = 100 * 1024 * 1024;

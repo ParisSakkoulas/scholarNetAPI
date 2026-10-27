@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Types } from 'mongoose';
+import { Schema as MongooseSchema, Types } from 'mongoose';
 
 export type TeamMemberDocument = TeamMember & Document;
 
@@ -7,10 +7,10 @@ export type TeamMemberDocument = TeamMember & Document;
   timestamps: true,
 })
 export class TeamMember {
-  @Prop({ type: Types.ObjectId, ref: 'Team', required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Team', required: true, index: true })
   teamId!: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
   userId!: Types.ObjectId;
 
   @Prop({ enum: ['owner', 'admin', 'member', 'viewer'], default: 'member' })
@@ -19,7 +19,7 @@ export class TeamMember {
   @Prop({ enum: ['active', 'invited', 'removed'], default: 'invited' })
   status!: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
   invitedBy?: Types.ObjectId;
   @Prop() joinedAt?: Date;
 }

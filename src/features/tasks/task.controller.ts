@@ -29,30 +29,43 @@ export class TasksController {
   @Get('projects/:projectId/tasks')
   findForProject(
     @Param('projectId') projectId: string,
-    @Query('columnId') columnId?: string,
-    @Query('assignee') assignee?: string,
-    @Query('status') status?: string,
+    @Query('columnId') columnId: string | undefined,
+    @Query('assignee') assignee: string | undefined,
+    @Query('status') status: string | undefined,
+    @Req() req,
   ) {
-    return this.tasksService.findForProject(projectId, { columnId, assignee, status });
+    return this.tasksService.findForProject(projectId, { columnId, assignee, status }, req.user._id);
   }
 
   @Get('tasks/:taskId/subtasks')
-  findSubtasks(@Param('taskId') taskId: string) {
-    return this.tasksService.findSubtasks(taskId);
+  findSubtasks(@Param('taskId') taskId: string, @Req() req) {
+    return this.tasksService.findSubtasks(taskId, req.user._id);
   }
 
   @Patch('tasks/:taskId')
-  update(@Param('taskId') taskId: string, @Body() dto: UpdateTaskDto) {
-    return this.tasksService.update(taskId, dto);
+  update(@Param('taskId') taskId: string, @Body() dto: UpdateTaskDto, @Req() req) {
+    return this.tasksService.update(taskId, dto, req.user._id);
   }
 
   @Patch('tasks/:taskId/move')
-  move(@Param('taskId') taskId: string, @Body() dto: MoveTaskDto) {
-    return this.tasksService.move(taskId, dto);
+  move(@Param('taskId') taskId: string, @Body() dto: MoveTaskDto, @Req() req) {
+    return this.tasksService.move(taskId, dto, req.user._id);
+  }
+
+  /** Admin / owner: sign off a completed task. */
+  @Post('tasks/:taskId/approve')
+  approve(@Param('taskId') taskId: string, @Req() req) {
+    return this.tasksService.approve(taskId, req.user._id);
+  }
+
+  /** Admin / owner: withdraw the approval, e.g. the work needs another pass. */
+  @Post('tasks/:taskId/unapprove')
+  unapprove(@Param('taskId') taskId: string, @Req() req) {
+    return this.tasksService.unapprove(taskId, req.user._id);
   }
 
   @Delete('tasks/:taskId')
-  remove(@Param('taskId') taskId: string) {
-    return this.tasksService.remove(taskId);
+  remove(@Param('taskId') taskId: string, @Req() req) {
+    return this.tasksService.remove(taskId, req.user._id);
   }
 }

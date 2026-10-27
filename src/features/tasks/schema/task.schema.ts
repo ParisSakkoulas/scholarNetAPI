@@ -1,5 +1,5 @@
 import { Prop, SchemaFactory, Schema } from '@nestjs/mongoose';
-import { Types, Document } from 'mongoose';
+import { Types, Document, Schema as MongooseSchema } from 'mongoose';
 
 export type TaskDocument = Task & Document;
 
@@ -45,5 +45,12 @@ export class Task {
 
   @Prop({ type: Date, default: null })
   doneAt?: Date | null;
+
+  /** Set by an admin/owner once a completed task has been reviewed. */
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', default: null })
+  approvedBy?: Types.ObjectId | null;
+
+  @Prop({ type: Date, default: null })
+  approvedAt?: Date | null;
 }
 export const TaskSchema = SchemaFactory.createForClass(Task);

@@ -136,7 +136,8 @@ export class TeamMembersService {
       .lean();
   }
 
-  async updateRole(teamId: string, userId: string, dto: UpdateMemberRoleDto) {
+  async updateRole(teamId: string, memberOrUserId: string, dto: UpdateMemberRoleDto) {
+    const userId = await this.resolveUserId(teamId, memberOrUserId);
     await this.assertNotOwner(teamId, userId, 'The owner role cannot be changed');
 
     const member = await this.memberModel
@@ -146,8 +147,13 @@ export class TeamMembersService {
     return member;
   }
 
-  /** Removes a member, or cancels their pending invite. The owner can never be removed. */
-  async remove(teamId: string, userId: string) {
+  /**
+   * Removes a member, or cancels their pending invite. The owner can never be removed.
+   * `memberOrUserId` may be the user's id or the membership row's id, so the
+   * frontend can pass whichever it has on a pending-invite row.
+   */
+  async remove(teamId: string, memberOrUserId: string) {
+    const userId = await this.resolveUserId(teamId, memberOrUserId);
     await this.assertNotOwner(teamId, userId, 'The owner cannot be removed from the team');
 
     const member = await this.memberModel.findOneAndUpdate(
@@ -173,6 +179,13 @@ export class TeamMembersService {
     );
     if (!member) throw new NotFoundException('You are not a member of this team');
     return { left: true };
+  }
+
+  /** Accepts either a user id or a membership id and returns the user id. */
+  private async resolveUserId(teamId: string, id: string): Promise<string> {
+    if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid id');
+    const byRow = await this.memberModel.findOne({ _id: id, teamId }).select('userId').lean();
+    return byRow ? byRow.userId.toString() : id;
   }
 
   private async assertNotOwner(teamId: string, userId: string, message: string) {
