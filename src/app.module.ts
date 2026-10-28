@@ -21,6 +21,7 @@ import { PublicationsModule } from './features/publications/publications.module'
 import { RatingsModule } from './features/ratings/ratings.module';
 import { SupervisionsModule } from './features/supervisions/supervisions.module';
 import { CirclesModule } from './features/circles/circles.module';
+import { GrantsModule } from './features/grants/grants.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { CirclesModule } from './features/circles/circles.module';
     RatingsModule,
     SupervisionsModule,
     CirclesModule,
+    GrantsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

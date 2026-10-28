@@ -24,6 +24,6 @@ import { ActivityModule } from '../activity/activity.module';
   ],
   controllers: [ProjectsController, BoardsController, ColumnsController],
   providers: [ProjectsService, BoardsService, ColumnsService],
-  exports: [MongooseModule],
+  exports: [MongooseModule, ProjectsService],
 })
 export class ProjectsModule {}

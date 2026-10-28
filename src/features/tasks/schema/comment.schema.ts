@@ -5,7 +5,7 @@ export type CommentDocument = Comment & Document;
 
 @Schema({ timestamps: true })
 export class Comment {
-  @Prop({ enum: ['task', 'project'], required: true })
+  @Prop({ enum: ['task', 'project', 'proposal_section'], required: true })
   entityType!: string;
 
   @Prop({ type: Types.ObjectId, required: true, index: true })
